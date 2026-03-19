@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const now = () => new Date().toLocaleTimeString('en', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let isAnimating = false;
 
 function log(logId, op, detail) {
   const el = $(logId);
@@ -192,8 +194,6 @@ function renderLLImpl(c, type) {
   const isDLL = type === 'dll';
 
   // Display order: always HEAD on left, TAIL on right
-  // sll-head: most recently pushed = head (left)
-  // sll-tail/dll: most recently pushed = tail (right)
   const nodes = isHeadTop ? [...stackData].reverse() : [...stackData];
   const n = nodes.length;
 
@@ -211,7 +211,6 @@ function renderLLImpl(c, type) {
     const isHead = i === 0;
     const isTail = i === n - 1;
     const isTop = isHeadTop ? isHead : isTail;
-    const isNew = isTop; // top is the most recently pushed
 
     let flag = '';
     if (isHead && isTop) flag = 'HEAD\u00a0/\u00a0TOP';
@@ -263,9 +262,72 @@ function renderLLImpl(c, type) {
 }
 
 // ═══════════════════════════════════════════════
+//  ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+
+// Fly the top element up and out of both panes
+async function animatePopOut() {
+  const ac = $('stackCanvas');
+  const ic = $('stackImplCanvas');
+
+  const topBox = ac.querySelector('.stack-item.stack-top .stack-item-box');
+  let implTop = null;
+
+  if (implType === 'array') {
+    implTop = ic.querySelector('.impl-arr-cell.is-top .arr-val');
+  } else {
+    const wraps = ic.querySelectorAll('.ll-node-wrap');
+    if (wraps.length) {
+      const idx = implType === 'sll-head' ? 0 : wraps.length - 1;
+      implTop = wraps[idx].querySelector('.ll-node');
+    }
+  }
+
+  if (topBox)  topBox.classList.add('animate-pop-out');
+  if (implTop) implTop.classList.add('animate-pop-out');
+  await sleep(440);
+}
+
+// Walk a cursor node-by-node from HEAD toward the new tail (sll-tail pop is O(n))
+async function animateSLLTailTraversal() {
+  const ic = $('stackImplCanvas');
+  const wraps = ic.querySelectorAll('.ll-node-wrap');
+  const n = wraps.length;
+  if (n <= 1) return;
+
+  for (let i = 0; i < n - 1; i++) {
+    const node = wraps[i].querySelector('.ll-node');
+    node.classList.add('ll-traversing');
+    if (i > 0) wraps[i - 1].querySelector('.ll-node').classList.remove('ll-traversing');
+    await sleep(370);
+  }
+  // New tail briefly highlighted before pop
+  if (n >= 2) wraps[n - 2].querySelector('.ll-node').classList.remove('ll-traversing');
+  await sleep(220);
+}
+
+// Pulse the top element and show a floating "→ return X" callout
+function animatePeek(v) {
+  const ac = $('stackCanvas');
+  const topBox = ac.querySelector('.stack-item.stack-top .stack-item-box');
+  if (!topBox) return;
+
+  topBox.classList.add('animate-pulse');
+
+  const bubble = document.createElement('div');
+  bubble.className = 'peek-bubble';
+  bubble.innerHTML = `<span class="peek-arrow">→</span>\u00a0return\u00a0<span class="peek-val">${v}</span>`;
+  ac.appendChild(bubble);
+
+  setTimeout(() => topBox.classList.remove('animate-pulse'), 600);
+  setTimeout(() => bubble.remove(), 1600);
+}
+
+// ═══════════════════════════════════════════════
 //  STACK — OPERATIONS
 // ═══════════════════════════════════════════════
 function stackPush() {
+  if (isAnimating) return;
   const v = $('stackInput').value;
   if (v === '') return;
   stackData.push(Number(v));
@@ -274,19 +336,35 @@ function stackPush() {
   renderStack();
 }
 
-function stackPop() {
+async function stackPop() {
+  if (isAnimating) return;
   if (!stackData.length) { log('stackLog', 'pop', 'stack is empty — underflow'); return; }
+
+  isAnimating = true;
+
+  // SLL tail: walk the chain to find the new tail first (that's what makes it O(n))
+  if (implType === 'sll-tail' && stackData.length > 1) {
+    await animateSLLTailTraversal();
+  }
+
+  await animatePopOut();
+
   const v = stackData.pop();
   log('stackLog', 'pop', `<span class="val">${v}</span> removed from top (size: ${stackData.length})`);
   renderStack();
+  isAnimating = false;
 }
 
 function stackPeek() {
+  if (isAnimating) return;
   if (!stackData.length) { log('stackLog', 'peek', 'stack is empty'); return; }
-  log('stackLog', 'peek', `top = <span class="val">${stackData[stackData.length - 1]}</span>`);
+  const v = stackData[stackData.length - 1];
+  log('stackLog', 'peek', `top = <span class="val">${v}</span>`);
+  animatePeek(v);
 }
 
 function stackClear() {
+  if (isAnimating) return;
   stackData = [];
   renderStack();
   log('stackLog', 'clear', 'stack emptied');
