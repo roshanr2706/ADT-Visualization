@@ -211,7 +211,7 @@
     border-radius: 2px;
     min-height: 380px;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .viz-canvas svg {
@@ -576,6 +576,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    position: relative;
   }
 
   .stack-top-label {
@@ -679,6 +680,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    position: relative;
   }
 
   .arr-val {
@@ -754,6 +756,7 @@
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
+    position: relative;
   }
 
   .ll-flag {
@@ -888,16 +891,16 @@
 
   /* ─── Peek return bubble ─── */
   @keyframes peekFloat {
-    0%   { opacity: 0; transform: translateX(-10px); }
-    15%  { opacity: 1; transform: translateX(0);     }
-    72%  { opacity: 1; transform: translateX(0);     }
-    100% { opacity: 0; transform: translateX(10px);  }
+    0%   { opacity: 0; transform: translateX(-50%) translateY(4px);  }
+    15%  { opacity: 1; transform: translateX(-50%) translateY(0);    }
+    72%  { opacity: 1; transform: translateX(-50%) translateY(0);    }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-6px); }
   }
 
   .peek-bubble {
     position: absolute;
-    top: 1.35rem;
-    left: calc(50% + 46px);
+    bottom: calc(100% + 5px);
+    left: 50%;
     font-family: 'DM Mono', monospace;
     font-size: 0.68rem;
     color: var(--paper);
@@ -911,3 +914,64 @@
 
   .peek-bubble .peek-arrow { color: var(--accent); }
   .peek-bubble .peek-val   { font-weight: 500; color: var(--highlight); }
+
+  /* ─── Linked List — abstract node (value only) ─── */
+  .ll-abs-node {
+    border: 1.5px solid var(--node-stroke);
+    background: var(--node-fill);
+  }
+
+  .ll-abs-node .ll-v {
+    min-width: 2.4rem;
+    border: none;
+    font-size: 0.82rem;
+  }
+
+  /* ─── Linked List — chain with extra top spacing for abs view ─── */
+  .ll-chain-abs {
+    padding-top: 0.5rem;
+  }
+
+  /* ─── Linked List — pointer variable boxes (impl view) ─── */
+  .ll-ptr-vars {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+    flex-wrap: wrap;
+  }
+
+  .ll-ptr-var-box {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: var(--paper);
+    background: var(--ink);
+    padding: 0.22rem 0.55rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .ll-ptr-var-box.ll-ptr-tail {
+    background: var(--accent);
+  }
+
+  .ll-ptr-arrow-r {
+    font-size: 0.75rem;
+    color: var(--accent-light);
+  }
+
+  .ll-ptr-tail .ll-ptr-arrow-r {
+    color: var(--highlight);
+  }
+
+  /* ─── Linked List — search found highlight ─── */
+  @keyframes llFound {
+    0%   { border-color: var(--success); background: #e6f4ec; box-shadow: 0 0 0 3px rgba(45,106,79,0.22); }
+    70%  { border-color: var(--success); background: #e6f4ec; box-shadow: 0 0 0 3px rgba(45,106,79,0.22); }
+    100% { border-color: var(--node-stroke); background: var(--node-fill); box-shadow: none; }
+  }
+
+  .ll-node.ll-found {
+    animation: llFound 1.8s ease forwards !important;
+  }

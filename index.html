@@ -23,6 +23,7 @@
 <!-- ─── Navigation ─── -->
 <nav class="nav-strip" id="navStrip">
   <button class="nav-btn active" data-panel="stack">Stack</button>
+  <button class="nav-btn" data-panel="linkedlist">Linked List</button>
 </nav>
 
 <!-- ─── Page Body ─── -->
@@ -82,6 +83,54 @@
       </div>
 
       <div class="op-log" id="stackLog"></div>
+    </div>
+
+    <!-- ═══ LINKED LIST ═══ -->
+    <div class="panel" id="panel-linkedlist">
+      <div class="section-header">
+        <h2>Linked List</h2>
+        <span class="issue-num">Sequential — pointer-linked nodes</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-ll-impl="sll-head"     onclick="setLLImpl('sll-head')">SLL — head only</button>
+        <button class="impl-btn"        data-ll-impl="sll-headtail" onclick="setLLImpl('sll-headtail')">SLL — head + tail</button>
+        <button class="impl-btn"        data-ll-impl="dll"          onclick="setLLImpl('dll')">DLL — head + tail</button>
+      </div>
+
+      <div class="impl-note" id="llImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="llValueInput" type="number" placeholder="Value" style="width:90px">
+        <input class="ctrl-input" id="llIndexInput" type="number" placeholder="Index" style="width:76px">
+        <button class="ctrl-btn"         onclick="llInsertHead()">Insert Head</button>
+        <button class="ctrl-btn"         onclick="llInsertTail()">Insert Tail</button>
+        <button class="ctrl-btn outline" onclick="llInsertAt()">Insert At</button>
+        <button class="ctrl-btn outline" onclick="llDeleteHead()">Del Head</button>
+        <button class="ctrl-btn outline" onclick="llDeleteTail()">Del Tail</button>
+        <button class="ctrl-btn outline" onclick="llDeleteValue()">Del Value</button>
+        <button class="ctrl-btn outline" onclick="llSearch()">Search</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger"  onclick="llClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Abstract Linked List</div>
+          <div class="viz-canvas" id="llCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Internal Representation</div>
+          <div class="viz-canvas" id="llImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="llLog"></div>
     </div>
 
   </main>
