@@ -24,6 +24,8 @@
 <nav class="nav-strip" id="navStrip">
   <button class="nav-btn active" data-panel="stack">Stack</button>
   <button class="nav-btn" data-panel="linkedlist">Linked List</button>
+  <button class="nav-btn" data-panel="queue">Queue</button>
+  <button class="nav-btn" data-panel="heap">Heap / Priority Queue</button>
 </nav>
 
 <!-- ─── Page Body ─── -->
@@ -131,6 +133,94 @@
       </div>
 
       <div class="op-log" id="llLog"></div>
+    </div>
+
+    <!-- ═══ QUEUE ═══ -->
+    <div class="panel" id="panel-queue">
+      <div class="section-header">
+        <h2>Queue</h2>
+        <span class="issue-num">FIFO — First In, First Out</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-q-impl="array"         onclick="setQImpl('array')">Simple Array</button>
+        <button class="impl-btn"        data-q-impl="circular"      onclick="setQImpl('circular')">Circular Array</button>
+        <button class="impl-btn"        data-q-impl="sll"           onclick="setQImpl('sll')">SLL — head + tail (front at head)</button>
+        <button class="impl-btn"        data-q-impl="sll-rear-head" onclick="setQImpl('sll-rear-head')">SLL — head + tail (rear at head)</button>
+        <button class="impl-btn"        data-q-impl="sll-head-only" onclick="setQImpl('sll-head-only')">SLL — head only</button>
+        <button class="impl-btn"        data-q-impl="two-stacks"    onclick="setQImpl('two-stacks')">Two Stacks</button>
+      </div>
+
+      <div class="impl-note" id="queueImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="queueInput" type="number" placeholder="Value">
+        <button class="ctrl-btn" onclick="queueEnqueue()">Enqueue</button>
+        <button class="ctrl-btn outline" onclick="queueDequeue()">Dequeue</button>
+        <button class="ctrl-btn outline" onclick="queuePeek()">Peek</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="queueClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Abstract Queue</div>
+          <div class="viz-canvas" id="queueCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Enqueue a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Internal Representation</div>
+          <div class="viz-canvas" id="queueImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Enqueue a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="queueLog"></div>
+    </div>
+
+    <!-- ═══ HEAP ═══ -->
+    <div class="panel" id="panel-heap">
+      <div class="section-header">
+        <h2>Heap</h2>
+        <span class="issue-num">Priority Queue — binary heap</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Heap type:</span>
+        <button class="impl-btn active" data-heap-impl="min-heap" onclick="setHeapImpl('min-heap')">Min-Heap</button>
+        <button class="impl-btn"        data-heap-impl="max-heap" onclick="setHeapImpl('max-heap')">Max-Heap</button>
+      </div>
+
+      <div class="impl-note" id="heapImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="heapInput" type="number" placeholder="Value">
+        <button class="ctrl-btn" onclick="heapInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="heapExtract()">Extract</button>
+        <button class="ctrl-btn outline" onclick="heapPeek()">Peek</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="heapClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Binary Tree (Abstract)</div>
+          <div class="viz-canvas" id="heapTreeCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Array Representation</div>
+          <div class="viz-canvas" id="heapArrayCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="heapLog"></div>
     </div>
 
   </main>

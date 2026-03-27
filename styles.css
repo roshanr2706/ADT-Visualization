@@ -975,3 +975,69 @@
   .ll-node.ll-found {
     animation: llFound 1.8s ease forwards !important;
   }
+
+  /* ─── Queue abstract view ─── */
+  .queue-abstract {
+    display: flex;
+    align-items: center;
+    padding: 2rem 1rem;
+    gap: 0;
+    min-height: 160px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .queue-end-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.55rem;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0 0.75rem;
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  /* Queue cells reuse .impl-arr-cell / .arr-val — no additional styles needed */
+
+  /* ─── Heap tree SVG ─── */
+  .node-circle.bubble-active {
+    fill: #e6f4ec;
+    stroke: var(--success);
+    stroke-width: 2.5;
+  }
+
+  .heap-index-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    fill: var(--muted);
+    text-anchor: middle;
+  }
+
+  .impl-arr-cell.heap-active .arr-val {
+    background: #e6f4ec;
+    border-color: var(--success);
+  }
+
+  /* ─── Heap bubble animations ─── */
+  @keyframes bubbleUp {
+    0%   { transform: translateY(0); }
+    40%  { transform: translateY(-10px); }
+    100% { transform: translateY(0); }
+  }
+
+  @keyframes bubbleDown {
+    0%   { transform: translateY(0); }
+    40%  { transform: translateY(10px); }
+    100% { transform: translateY(0); }
+  }
+
+  .animate-bubble-up   { animation: bubbleUp   0.4s ease; }
+  .animate-bubble-down { animation: bubbleDown 0.4s ease; }
+
+  /* ─── Slide in from right (enqueue) ─── */
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .animate-slide-in-right { animation: slideInRight 0.35s ease forwards; }
