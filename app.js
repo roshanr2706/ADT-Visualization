@@ -1447,8 +1447,8 @@ function heapBubbleDownSteps(startIdx) {
 const HEAP_EMPTY = `<div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>`;
 
 function renderHeap(highlightSet) {
-  const tc = $('heapTreeCanvas');
-  const ac = $('heapArrayCanvas');
+  const tc = $('heapCanvas');
+  const ac = $('heapImplCanvas');
   if (heapData.length === 0) { tc.innerHTML = HEAP_EMPTY; ac.innerHTML = HEAP_EMPTY; return; }
   renderHeapTree(tc, highlightSet || new Set());
   renderHeapArray(ac, highlightSet || new Set());
@@ -1536,8 +1536,8 @@ async function animateHeapSwaps(steps) {
 }
 
 async function animateHeapExtractRoot() {
-  const tc = $('heapTreeCanvas');
-  const ac = $('heapArrayCanvas');
+  const tc = $('heapCanvas');
+  const ac = $('heapImplCanvas');
   const rootCircle = tc.querySelector('.node-circle.highlight');
   const rootCell   = ac.querySelector('.impl-arr-cell.is-top .arr-val');
   if (rootCircle) rootCircle.classList.add('animate-pop-out');
@@ -1546,8 +1546,8 @@ async function animateHeapExtractRoot() {
 }
 
 function animateHeapPeek(v) {
-  const tc = $('heapTreeCanvas');
-  const ac = $('heapArrayCanvas');
+  const tc = $('heapCanvas');
+  const ac = $('heapImplCanvas');
   const rootCircle = tc.querySelector('.node-circle.highlight');
   const rootCell   = ac.querySelector('.impl-arr-cell.is-top');
   if (rootCircle) { rootCircle.classList.add('animate-pulse'); setTimeout(() => rootCircle.classList.remove('animate-pulse'), 600); }
@@ -1615,3 +1615,1222 @@ function heapClear() {
 
 // ─── Init Heap ───
 setHeapImpl('min-heap');
+
+// ═══════════════════════════════════════════════
+//  SHARED TREE HELPERS
+// ═══════════════════════════════════════════════
+
+// In-order x / depth y layout for binary trees (handles arbitrary shapes)
+function layoutBinaryTree(root, width, levelH, topPad) {
+  const pos = new Map();
+  let inorderIdx = 0;
+  (function walk(node, depth) {
+    if (!node) return;
+    walk(node.left, depth + 1);
+    pos.set(node, { x: inorderIdx++, y: topPad + depth * levelH });
+    walk(node.right, depth + 1);
+  })(root, 0);
+  const count = inorderIdx;
+  for (const p of pos.values())
+    p.x = count === 1 ? width / 2 : 40 + (p.x / (count - 1)) * (width - 80);
+  return pos;
+}
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — DATA & METADATA
+// ═══════════════════════════════════════════════
+let btRoot = null;
+let btImpl = 'linked';
+let btAnimating = false;
+let btNextId = 1;
+
+const btImplMeta = {
+  'linked': {
+    label: 'Linked Nodes',
+    note: 'Nodes are inserted level-order (BFS to next open slot). Each node holds a value, a left-child pointer, and a right-child pointer. No ordering invariant — purely structural.',
+    complexity: [['insert','O(n)'],['delete','O(n)'],['search','O(n)'],['traversal','O(n)']]
+  }
+};
+
+sidebarData.binarytree = {
+  description: 'A binary tree is a hierarchical structure where each node has at most two children — left and right. There is no ordering constraint on values. This visualizer inserts nodes level-order (BFS), filling each level left-to-right before starting the next.'
+};
+
+const _prevUpdateSidebar3 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'binarytree') { _prevUpdateSidebar3(panel); return; }
+  const meta = btImplMeta[btImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.binarytree.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Traversals</h3><p>In-order (L→N→R), Pre-order (N→L→R), Post-order (L→R→N), Level-order (BFS). Without an ordering invariant, in-order does not produce a sorted sequence.</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — IMPL SWITCHER
+// ═══════════════════════════════════════════════
+function setBTImpl(type) {
+  btImpl = type;
+  document.querySelectorAll('[data-bt-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.btImpl === type);
+  });
+  $('btImplNote').innerHTML = btImplMeta[type].note;
+  if ($('panel-binarytree').classList.contains('active')) updateSidebar('binarytree');
+  renderBT();
+}
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — CORE ALGORITHMS
+// ═══════════════════════════════════════════════
+function _btNextSlot(root) {
+  const q = [root];
+  while (q.length) {
+    const n = q.shift();
+    if (!n.left) return { parent: n, side: 'left' };
+    if (!n.right) return { parent: n, side: 'right' };
+    q.push(n.left, n.right);
+  }
+  return null;
+}
+
+function _btDeepestNode(root) {
+  let last = null;
+  const q = [root];
+  while (q.length) { last = q.shift(); if (last.left) q.push(last.left); if (last.right) q.push(last.right); }
+  return last;
+}
+
+function _btDeleteDeepest(root, target) {
+  const q = [root];
+  while (q.length) {
+    const n = q.shift();
+    if (n.left === target) { n.left = null; return; }
+    if (n.right === target) { n.right = null; return; }
+    if (n.left) q.push(n.left);
+    if (n.right) q.push(n.right);
+  }
+}
+
+function _btFindNode(root, v) {
+  const q = [root];
+  while (q.length) {
+    const n = q.shift();
+    if (n.v === v) return n;
+    if (n.left) q.push(n.left);
+    if (n.right) q.push(n.right);
+  }
+  return null;
+}
+
+function _btCollect(root, order) {
+  const out = [];
+  if (!root) return out;
+  if (order === 'inorder')   { (function w(n){if(!n)return;w(n.left);out.push(n);w(n.right);})(root); }
+  else if (order === 'preorder')  { (function w(n){if(!n)return;out.push(n);w(n.left);w(n.right);})(root); }
+  else if (order === 'postorder') { (function w(n){if(!n)return;w(n.left);w(n.right);out.push(n);})(root); }
+  else { const q=[root]; while(q.length){const n=q.shift();out.push(n);if(n.left)q.push(n.left);if(n.right)q.push(n.right);} }
+  return out;
+}
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — RENDER
+// ═══════════════════════════════════════════════
+const BT_EMPTY = `<div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>`;
+
+function renderBT(highlightSet, extraCls) {
+  const tc = $('btCanvas'), ac = $('btImplCanvas');
+  if (!btRoot) { tc.innerHTML = BT_EMPTY; ac.innerHTML = BT_EMPTY; return; }
+  _renderBTTree(tc, highlightSet || new Set(), extraCls || {});
+  _renderBTStruct(ac, highlightSet || new Set());
+}
+
+function _renderBTTree(c, hl, extraCls) {
+  const W = 520, lH = 72, top = 36, r = 20;
+  const pos = layoutBinaryTree(btRoot, W, lH, top);
+  let maxY = 0; for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+  let svg = `<svg viewBox="0 0 ${W} ${maxY+r+30}" style="width:100%;height:${maxY+r+30}px;display:block">`;
+  for (const [node, {x,y}] of pos) {
+    if (node.left && pos.has(node.left)) { const p=pos.get(node.left); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+    if (node.right && pos.has(node.right)) { const p=pos.get(node.right); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+  }
+  for (const [node, {x,y}] of pos) {
+    const ex = extraCls[node.id] || (hl.has(node.id) ? 'bubble-active' : '');
+    svg += `<circle class="node-circle${ex?' '+ex:''}" cx="${x}" cy="${y}" r="${r}" data-id="${node.id}"/>`;
+    svg += `<text class="node-text" x="${x}" y="${y}">${node.v}</text>`;
+  }
+  svg += '</svg>'; c.innerHTML = svg;
+}
+
+function _renderBTStruct(c, hl) {
+  const nodes = _btCollect(btRoot, 'levelorder');
+  let h = '<div class="impl-view"><div class="impl-section-label">Node structs</div><div class="tree-struct-view">';
+  h += '<div class="tree-struct-header"><span>id</span><span>left</span><span>val</span><span>right</span></div>';
+  for (const n of nodes) {
+    const row = hl.has(n.id) ? ' row-highlight' : '';
+    const L = n.left ? `<span class="struct-ptr">${n.left.id}</span>` : `<span class="struct-null">∅</span>`;
+    const R = n.right ? `<span class="struct-ptr">${n.right.id}</span>` : `<span class="struct-null">∅</span>`;
+    h += `<div class="tree-struct-row${row}"><span>${n.id}</span>${L}<span class="struct-val">${n.v}</span>${R}</div>`;
+  }
+  let height = 0;
+  (function d(n,dep){if(!n)return;height=Math.max(height,dep);d(n.left,dep+1);d(n.right,dep+1);})(btRoot,0);
+  h += `</div><div class="impl-info-row"><span class="impl-stat">nodes\u00a0=\u00a0${nodes.length}</span><span class="impl-stat">height\u00a0=\u00a0${height}</span><span class="impl-stat">insert:\u00a0level-order</span></div></div>`;
+  c.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+async function _animateBTVisitSeq(nodes) {
+  const visited = new Set();
+  for (const n of nodes) { visited.add(n.id); renderBT(visited); await sleep(420); }
+  await sleep(280); renderBT();
+}
+
+// ═══════════════════════════════════════════════
+//  BINARY TREE — OPERATIONS
+// ═══════════════════════════════════════════════
+async function btInsert() {
+  if (btAnimating) return;
+  const inp = $('btInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = ''; btAnimating = true;
+
+  const node = { v, left: null, right: null, id: btNextId++ };
+  if (!btRoot) { btRoot = node; }
+  else { const s = _btNextSlot(btRoot); s.parent[s.side] = node; }
+
+  renderBT(new Set([node.id]));
+  const el = $('btCanvas').querySelector(`[data-id="${node.id}"]`);
+  if (el) { el.classList.add('animate-drop'); setTimeout(() => el.classList.remove('animate-drop'), 500); }
+  await sleep(500); renderBT();
+  log('btLog', 'insert', `<span class="val">${v}</span> inserted (level-order)`);
+  btAnimating = false;
+}
+
+async function btDelete() {
+  if (btAnimating) return;
+  const inp = $('btInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = ''; btAnimating = true;
+
+  const target = _btFindNode(btRoot, v);
+  if (!target) { log('btLog', 'delete', `<span class="val">${v}</span> not found`); btAnimating = false; return; }
+
+  const deepest = _btDeepestNode(btRoot);
+  if (deepest === target) {
+    const el = $('btCanvas').querySelector(`[data-id="${target.id}"]`);
+    if (el) el.classList.add('animate-pop-out');
+    await sleep(450);
+    if (!target.left && !target.right && target === btRoot) { btRoot = null; }
+    else _btDeleteDeepest(btRoot, deepest);
+  } else {
+    renderBT(new Set([target.id, deepest.id])); await sleep(420);
+    target.v = deepest.v;
+    _btDeleteDeepest(btRoot, deepest);
+    renderBT(new Set([target.id])); await sleep(320);
+  }
+  renderBT();
+  log('btLog', 'delete', `<span class="val">${v}</span> removed`);
+  btAnimating = false;
+}
+
+async function btSearch() {
+  if (btAnimating) return;
+  const inp = $('btInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!btRoot) { log('btLog', 'search', 'tree is empty'); return; }
+  btAnimating = true;
+
+  const visited = new Set(); let found = null;
+  const q = [btRoot];
+  while (q.length) {
+    const n = q.shift(); visited.add(n.id); renderBT(visited); await sleep(360);
+    if (n.v === v) { found = n; break; }
+    if (n.left) q.push(n.left); if (n.right) q.push(n.right);
+  }
+  if (found) {
+    const el = $('btCanvas').querySelector(`[data-id="${found.id}"]`);
+    if (el) { el.classList.remove('bubble-active'); el.classList.add('found'); }
+    log('btLog', 'search', `<span class="val">${v}</span> found`);
+    await sleep(1800);
+  } else { log('btLog', 'search', `<span class="val">${v}</span> not found`); }
+  renderBT(); btAnimating = false;
+}
+
+async function btTraverse(order) {
+  if (btAnimating) return;
+  if (!btRoot) { log('btLog', 'traverse', 'tree is empty'); return; }
+  btAnimating = true;
+  const nodes = _btCollect(btRoot, order);
+  await _animateBTVisitSeq(nodes);
+  log('btLog', 'traverse', `${order}: ${nodes.map(n=>`<span class="val">${n.v}</span>`).join(' → ')}`);
+  btAnimating = false;
+}
+
+function btClear() {
+  if (btAnimating) return;
+  btRoot = null; btNextId = 1; renderBT();
+  log('btLog', 'clear', 'tree cleared');
+}
+
+// ─── Init Binary Tree ───
+setBTImpl('linked');
+
+// ═══════════════════════════════════════════════
+//  BST — DATA & METADATA
+// ═══════════════════════════════════════════════
+let bstRoot = null;
+let bstImpl = 'bst';
+let bstAnimating = false;
+let bstNextId = 1;
+
+const bstImplMeta = {
+  'bst': {
+    label: 'Linked Nodes (BST)',
+    note: 'Binary Search Tree: left subtree values < node < right subtree values. In-order traversal always yields a sorted sequence. Height h determines all operation costs.',
+    complexity: [['insert','O(h)'],['remove','O(h)'],['search','O(h)'],['traversal','O(n)']]
+  }
+};
+
+sidebarData.bst = {
+  description: 'A Binary Search Tree enforces: for every node, all values in the left subtree are less, and all in the right subtree are greater. This enables O(h) search, insert, and delete where h is the tree height. In the worst case (sorted input), h = n — use an AVL tree to guarantee O(log n).'
+};
+
+const _prevUpdateSidebar4 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'bst') { _prevUpdateSidebar4(panel); return; }
+  const meta = bstImplMeta[bstImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.bst.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity (h = height)</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Worst Case</h3><p>Inserting sorted input (1,2,3,…) degenerates the BST into a linked list with h = n and O(n) ops. An AVL or Red-Black tree prevents this with rotations.</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+// ═══════════════════════════════════════════════
+//  BST — IMPL SWITCHER
+// ═══════════════════════════════════════════════
+function setBSTImpl(type) {
+  bstImpl = type;
+  document.querySelectorAll('[data-bst-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.bstImpl === type);
+  });
+  $('bstImplNote').innerHTML = bstImplMeta[type].note;
+  if ($('panel-bst').classList.contains('active')) updateSidebar('bst');
+  renderBST();
+}
+
+// ═══════════════════════════════════════════════
+//  BST — CORE ALGORITHMS
+// ═══════════════════════════════════════════════
+function _bstFindPath(root, v) {
+  const path = []; let cur = root;
+  while (cur) {
+    path.push(cur);
+    if (v === cur.v) return { path, found: cur };
+    cur = v < cur.v ? cur.left : cur.right;
+  }
+  return { path, found: null };
+}
+
+function _bstInsertPath(root, v) {
+  const path = []; let cur = root;
+  while (cur) {
+    path.push(cur);
+    if (v === cur.v) return path; // duplicate — path ends at dupe
+    cur = v < cur.v ? cur.left : cur.right;
+  }
+  return path;
+}
+
+function _bstInorderSuccessor(node) {
+  let cur = node.right; while (cur && cur.left) cur = cur.left; return cur;
+}
+
+function _bstRemove(root, v) {
+  if (!root) return null;
+  if (v < root.v) { root.left = _bstRemove(root.left, v); }
+  else if (v > root.v) { root.right = _bstRemove(root.right, v); }
+  else {
+    if (!root.left) return root.right;
+    if (!root.right) return root.left;
+    const succ = _bstInorderSuccessor(root);
+    root.v = succ.v; root.right = _bstRemove(root.right, succ.v);
+  }
+  return root;
+}
+
+function _bstCollect(root, order) {
+  const out = [];
+  if (!root) return out;
+  if (order === 'inorder')   { (function w(n){if(!n)return;w(n.left);out.push(n);w(n.right);})(root); }
+  else if (order === 'preorder')  { (function w(n){if(!n)return;out.push(n);w(n.left);w(n.right);})(root); }
+  else if (order === 'postorder') { (function w(n){if(!n)return;w(n.left);w(n.right);out.push(n);})(root); }
+  else { const q=[root]; while(q.length){const n=q.shift();out.push(n);if(n.left)q.push(n.left);if(n.right)q.push(n.right);} }
+  return out;
+}
+
+// ═══════════════════════════════════════════════
+//  BST — RENDER
+// ═══════════════════════════════════════════════
+const BST_EMPTY = `<div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>`;
+
+function renderBST(highlightSet, extraCls) {
+  const tc = $('bstCanvas'), ac = $('bstImplCanvas');
+  if (!bstRoot) { tc.innerHTML = BST_EMPTY; ac.innerHTML = BST_EMPTY; return; }
+  _renderBSTTree(tc, highlightSet || new Set(), extraCls || {});
+  _renderBSTStruct(ac, highlightSet || new Set());
+}
+
+function _renderBSTTree(c, hl, extraCls) {
+  const W = 520, lH = 72, top = 36, r = 20;
+  const pos = layoutBinaryTree(bstRoot, W, lH, top);
+  let maxY = 0; for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+  let svg = `<svg viewBox="0 0 ${W} ${maxY+r+30}" style="width:100%;height:${maxY+r+30}px;display:block">`;
+  for (const [node, {x,y}] of pos) {
+    if (node.left && pos.has(node.left)) { const p=pos.get(node.left); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+    if (node.right && pos.has(node.right)) { const p=pos.get(node.right); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+  }
+  for (const [node, {x,y}] of pos) {
+    const ex = extraCls[node.id] || (hl.has(node.id) ? 'bubble-active' : '');
+    svg += `<circle class="node-circle${ex?' '+ex:''}" cx="${x}" cy="${y}" r="${r}" data-id="${node.id}"/>`;
+    svg += `<text class="node-text" x="${x}" y="${y}">${node.v}</text>`;
+  }
+  svg += '</svg>'; c.innerHTML = svg;
+}
+
+function _renderBSTStruct(c, hl) {
+  const levelNodes = _bstCollect(bstRoot, 'levelorder');
+  const inorderVals = _bstCollect(bstRoot, 'inorder').map(n => n.v).join(' < ');
+  let h = '<div class="impl-view"><div class="impl-section-label">Node structs (level-order)</div><div class="tree-struct-view">';
+  h += '<div class="tree-struct-header"><span>id</span><span>left</span><span>val</span><span>right</span></div>';
+  for (const n of levelNodes) {
+    const row = hl.has(n.id) ? ' row-highlight' : '';
+    const L = n.left ? `<span class="struct-ptr">${n.left.id}</span>` : `<span class="struct-null">∅</span>`;
+    const R = n.right ? `<span class="struct-ptr">${n.right.id}</span>` : `<span class="struct-null">∅</span>`;
+    h += `<div class="tree-struct-row${row}"><span>${n.id}</span>${L}<span class="struct-val">${n.v}</span>${R}</div>`;
+  }
+  h += `</div><div class="impl-info-row"><span class="impl-stat">nodes\u00a0=\u00a0${levelNodes.length}</span><span class="impl-stat impl-good">in-order:\u00a0sorted</span></div>`;
+  if (inorderVals) h += `<div style="padding:0.35rem 0.5rem;font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--muted);border-top:1px dotted var(--rule)">${inorderVals}</div>`;
+  h += '</div>'; c.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+//  BST — ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+async function _animateBSTPath(pathNodes, finalCls) {
+  const visited = new Set();
+  for (const n of pathNodes) {
+    visited.add(n.id);
+    const cls = {}; for (const id of visited) cls[id] = 'path';
+    renderBST(visited, cls); await sleep(380);
+  }
+  if (finalCls && pathNodes.length) {
+    const last = pathNodes[pathNodes.length - 1];
+    renderBST(new Set([last.id]), { [last.id]: finalCls });
+    await sleep(finalCls === 'found' ? 1800 : 480);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  BST — OPERATIONS
+// ═══════════════════════════════════════════════
+async function bstInsert() {
+  if (bstAnimating) return;
+  const inp = $('bstInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = ''; bstAnimating = true;
+
+  const path = _bstInsertPath(bstRoot, v);
+  if (path.length) await _animateBSTPath(path, '');
+
+  if (path.length && path[path.length - 1].v === v) {
+    log('bstLog', 'insert', `<span class="val">${v}</span> already exists`);
+    renderBST(); bstAnimating = false; return;
+  }
+
+  const node = { v, left: null, right: null, id: bstNextId++ };
+  if (!bstRoot) { bstRoot = node; }
+  else {
+    const par = path[path.length - 1];
+    if (v < par.v) par.left = node; else par.right = node;
+  }
+
+  renderBST(new Set([node.id]));
+  const el = $('bstCanvas').querySelector(`[data-id="${node.id}"]`);
+  if (el) { el.classList.add('animate-drop'); setTimeout(() => el.classList.remove('animate-drop'), 500); }
+  await sleep(500); renderBST();
+  log('bstLog', 'insert', `<span class="val">${v}</span> inserted`);
+  bstAnimating = false;
+}
+
+async function bstRemove() {
+  if (bstAnimating) return;
+  const inp = $('bstInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!bstRoot) { log('bstLog', 'remove', 'tree is empty'); return; }
+  bstAnimating = true;
+
+  const { path, found } = _bstFindPath(bstRoot, v);
+  if (!found) {
+    await _animateBSTPath(path, '');
+    log('bstLog', 'remove', `<span class="val">${v}</span> not found`);
+    renderBST(); bstAnimating = false; return;
+  }
+  await _animateBSTPath(path, 'bubble-active');
+  await sleep(280);
+
+  if (found.left && found.right) {
+    const succ = _bstInorderSuccessor(found);
+    renderBST(new Set([found.id, succ.id])); await sleep(500);
+  }
+  const el = $('bstCanvas').querySelector(`[data-id="${found.id}"]`);
+  if (el) el.classList.add('animate-pop-out');
+  await sleep(440);
+  bstRoot = _bstRemove(bstRoot, v);
+  renderBST();
+  log('bstLog', 'remove', `<span class="val">${v}</span> removed`);
+  bstAnimating = false;
+}
+
+async function bstSearch() {
+  if (bstAnimating) return;
+  const inp = $('bstInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!bstRoot) { log('bstLog', 'search', 'tree is empty'); return; }
+  bstAnimating = true;
+
+  const { path, found } = _bstFindPath(bstRoot, v);
+  await _animateBSTPath(path, found ? 'found' : '');
+  if (found) { log('bstLog', 'search', `<span class="val">${v}</span> found (depth\u00a0${path.length-1})`); await sleep(1800); }
+  else { log('bstLog', 'search', `<span class="val">${v}</span> not found`); }
+  renderBST(); bstAnimating = false;
+}
+
+async function bstTraverse(order) {
+  if (bstAnimating) return;
+  if (!bstRoot) { log('bstLog', 'traverse', 'tree is empty'); return; }
+  bstAnimating = true;
+  const nodes = _bstCollect(bstRoot, order);
+  const visited = new Set();
+  for (const n of nodes) { visited.add(n.id); renderBST(visited); await sleep(420); }
+  await sleep(280); renderBST();
+  log('bstLog', 'traverse', `${order}: ${nodes.map(n=>`<span class="val">${n.v}</span>`).join(' → ')}`);
+  bstAnimating = false;
+}
+
+function bstClear() {
+  if (bstAnimating) return;
+  bstRoot = null; bstNextId = 1; renderBST();
+  log('bstLog', 'clear', 'tree cleared');
+}
+
+// ─── Init BST ───
+setBSTImpl('bst');
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — DATA & METADATA
+// ═══════════════════════════════════════════════
+let avlRoot = null;
+let avlImpl = 'avl';
+let avlAnimating = false;
+let avlNextId = 1;
+
+const avlImplMeta = {
+  'avl': {
+    label: 'Linked Nodes (AVL)',
+    note: 'AVL Tree: a self-balancing BST. After every insert/remove the tree rebalances via rotations to ensure |bf| \u2264 1 at every node, guaranteeing O(log n) height.',
+    complexity: [['insert','O(log n)'],['remove','O(log n)'],['search','O(log n)'],['traversal','O(n)']]
+  }
+};
+
+sidebarData.avl = {
+  description: 'An AVL Tree is a self-balancing BST. Each node stores a <em>balance factor</em> bf = height(left) \u2212 height(right). After any insert or remove, if |bf| > 1 at some ancestor, one of four rotations (LL, LR, RR, RL) restores balance and keeps height O(log n).'
+};
+
+const _prevUpdateSidebar5 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'avl') { _prevUpdateSidebar5(panel); return; }
+  const meta = avlImplMeta[avlImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.avl.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Rotations</h3><p>LL: right-rotate at imbalanced node. RR: left-rotate. LR: left-rotate child, then right-rotate ancestor. RL: right-rotate child, then left-rotate ancestor. Balance factor colours: grey\u00a0=\u00a00, accent\u00a0=\u00a0\u00b11, red\u00a0=\u00a0\u00b12 (triggers rotation).</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — IMPL SWITCHER
+// ═══════════════════════════════════════════════
+function setAVLImpl(type) {
+  avlImpl = type;
+  document.querySelectorAll('[data-avl-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.avlImpl === type);
+  });
+  $('avlImplNote').innerHTML = avlImplMeta[type].note;
+  if ($('panel-avl').classList.contains('active')) updateSidebar('avl');
+  renderAVL();
+}
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — CORE ALGORITHMS
+// ═══════════════════════════════════════════════
+function _avlH(n) { return n ? n.h : -1; }
+function _avlBF(n) { return n ? _avlH(n.left) - _avlH(n.right) : 0; }
+function _avlUpdH(n) { if (n) n.h = 1 + Math.max(_avlH(n.left), _avlH(n.right)); }
+
+function _avlRotR(y) {
+  const x = y.left, T2 = x.right;
+  x.right = y; y.left = T2;
+  _avlUpdH(y); _avlUpdH(x); return x;
+}
+function _avlRotL(x) {
+  const y = x.right, T2 = y.left;
+  y.left = x; x.right = T2;
+  _avlUpdH(x); _avlUpdH(y); return y;
+}
+
+function _avlInsert(root, v, rots) {
+  if (!root) return { v, left: null, right: null, h: 0, id: avlNextId++ };
+  if (v < root.v) root.left = _avlInsert(root.left, v, rots);
+  else if (v > root.v) root.right = _avlInsert(root.right, v, rots);
+  else return root;
+  _avlUpdH(root);
+  const bf = _avlBF(root);
+  if (bf > 1) {
+    const kind = _avlBF(root.left) >= 0 ? 'LL' : 'LR';
+    if (kind === 'LR') root.left = _avlRotL(root.left);
+    const nr = _avlRotR(root); rots.push({ kind, pivot: nr.v }); return nr;
+  }
+  if (bf < -1) {
+    const kind = _avlBF(root.right) <= 0 ? 'RR' : 'RL';
+    if (kind === 'RL') root.right = _avlRotR(root.right);
+    const nr = _avlRotL(root); rots.push({ kind, pivot: nr.v }); return nr;
+  }
+  return root;
+}
+
+function _avlFindMin(n) { while (n.left) n = n.left; return n; }
+
+function _avlRemove(root, v, rots) {
+  if (!root) return null;
+  if (v < root.v) root.left = _avlRemove(root.left, v, rots);
+  else if (v > root.v) root.right = _avlRemove(root.right, v, rots);
+  else {
+    if (!root.left) return root.right;
+    if (!root.right) return root.left;
+    const succ = _avlFindMin(root.right);
+    root.v = succ.v;
+    root.right = _avlRemove(root.right, succ.v, rots);
+  }
+  _avlUpdH(root);
+  const bf = _avlBF(root);
+  if (bf > 1) {
+    const kind = _avlBF(root.left) >= 0 ? 'LL' : 'LR';
+    if (kind === 'LR') root.left = _avlRotL(root.left);
+    const nr = _avlRotR(root); rots.push({ kind, pivot: nr.v }); return nr;
+  }
+  if (bf < -1) {
+    const kind = _avlBF(root.right) <= 0 ? 'RR' : 'RL';
+    if (kind === 'RL') root.right = _avlRotR(root.right);
+    const nr = _avlRotL(root); rots.push({ kind, pivot: nr.v }); return nr;
+  }
+  return root;
+}
+
+function _avlFindPath(root, v) {
+  const path = []; let cur = root;
+  while (cur) {
+    path.push(cur);
+    if (v === cur.v) return { path, found: cur };
+    cur = v < cur.v ? cur.left : cur.right;
+  }
+  return { path, found: null };
+}
+
+function _avlCollect(root, order) {
+  const out = [];
+  if (!root) return out;
+  if (order === 'inorder')   { (function w(n){if(!n)return;w(n.left);out.push(n);w(n.right);})(root); }
+  else if (order === 'preorder')  { (function w(n){if(!n)return;out.push(n);w(n.left);w(n.right);})(root); }
+  else if (order === 'postorder') { (function w(n){if(!n)return;w(n.left);w(n.right);out.push(n);})(root); }
+  else { const q=[root]; while(q.length){const n=q.shift();out.push(n);if(n.left)q.push(n.left);if(n.right)q.push(n.right);} }
+  return out;
+}
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — RENDER
+// ═══════════════════════════════════════════════
+const AVL_EMPTY = `<div class="empty-state"><span class="ornament">\u00a7</span>Insert a value to begin</div>`;
+
+function renderAVL(highlightSet, extraCls) {
+  const tc = $('avlCanvas'), ac = $('avlImplCanvas');
+  if (!avlRoot) { tc.innerHTML = AVL_EMPTY; ac.innerHTML = AVL_EMPTY; return; }
+  _renderAVLTree(tc, highlightSet || new Set(), extraCls || {});
+  _renderAVLStruct(ac, highlightSet || new Set());
+}
+
+function _renderAVLTree(c, hl, extraCls) {
+  const W = 520, lH = 80, top = 36, r = 20;
+  const pos = layoutBinaryTree(avlRoot, W, lH, top);
+  let maxY = 0; for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+  let svg = `<svg viewBox="0 0 ${W} ${maxY+r+36}" style="width:100%;height:${maxY+r+36}px;display:block">`;
+  for (const [node, {x,y}] of pos) {
+    if (node.left && pos.has(node.left)) { const p=pos.get(node.left); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+    if (node.right && pos.has(node.right)) { const p=pos.get(node.right); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+  }
+  for (const [node, {x,y}] of pos) {
+    const ex = extraCls[node.id] || (hl.has(node.id) ? 'bubble-active' : '');
+    svg += `<circle class="node-circle${ex?' '+ex:''}" cx="${x}" cy="${y}" r="${r}" data-id="${node.id}"/>`;
+    svg += `<text class="node-text" x="${x}" y="${y}">${node.v}</text>`;
+    const bf = _avlBF(node);
+    const bfCol = bf === 0 ? 'var(--muted)' : (Math.abs(bf) === 1 ? 'var(--accent)' : 'var(--danger)');
+    svg += `<text class="tree-meta-label" x="${x}" y="${y+r+11}"><tspan fill="${bfCol}">bf=${bf}</tspan></text>`;
+  }
+  svg += '</svg>'; c.innerHTML = svg;
+}
+
+function _renderAVLStruct(c, hl) {
+  const nodes = _avlCollect(avlRoot, 'levelorder');
+  const gcols = '2rem 2.5rem 3rem 2.5rem 2rem';
+  let h = '<div class="impl-view"><div class="impl-section-label">Node structs (h\u00a0=\u00a0subtree height)</div><div class="tree-struct-view">';
+  h += `<div class="tree-struct-header" style="grid-template-columns:${gcols}"><span>id</span><span>left</span><span>val</span><span>right</span><span>h</span></div>`;
+  for (const n of nodes) {
+    const row = hl.has(n.id) ? ' row-highlight' : '';
+    const L = n.left ? `<span class="struct-ptr">${n.left.id}</span>` : `<span class="struct-null">\u2205</span>`;
+    const R = n.right ? `<span class="struct-ptr">${n.right.id}</span>` : `<span class="struct-null">\u2205</span>`;
+    h += `<div class="tree-struct-row${row}" style="grid-template-columns:${gcols}"><span>${n.id}</span>${L}<span class="struct-val">${n.v}</span>${R}<span>${n.h}</span></div>`;
+  }
+  const height = avlRoot ? avlRoot.h : 0;
+  h += `</div><div class="impl-info-row"><span class="impl-stat">nodes\u00a0=\u00a0${nodes.length}</span><span class="impl-stat">height\u00a0=\u00a0${height}</span><span class="impl-stat impl-good">balanced</span></div></div>`;
+  c.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+async function _animateAVLPath(path, finalCls) {
+  const visited = new Set();
+  for (const n of path) {
+    visited.add(n.id);
+    const cls = {}; for (const id of visited) cls[id] = 'path';
+    renderAVL(visited, cls); await sleep(360);
+  }
+  if (finalCls && path.length) {
+    const last = path[path.length - 1];
+    renderAVL(new Set([last.id]), { [last.id]: finalCls });
+    await sleep(finalCls === 'found' ? 1800 : 480);
+  }
+}
+
+async function _showAVLRotations(rots) {
+  for (const { kind, pivot } of rots) {
+    const tc = $('avlCanvas');
+    const lbl = document.createElement('div');
+    lbl.className = 'tree-rotation-label';
+    lbl.textContent = `${kind} Rotation at ${pivot}`;
+    tc.prepend(lbl);
+    renderAVL(); await sleep(750);
+    const existing = tc.querySelector('.tree-rotation-label');
+    if (existing) existing.remove();
+    await sleep(200);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  AVL TREE — OPERATIONS
+// ═══════════════════════════════════════════════
+async function avlInsert() {
+  if (avlAnimating) return;
+  const inp = $('avlInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = ''; avlAnimating = true;
+
+  const { path } = _avlFindPath(avlRoot, v);
+  if (path.length) await _animateAVLPath(path, '');
+
+  if (path.length && path[path.length - 1].v === v) {
+    log('avlLog', 'insert', `<span class="val">${v}</span> already exists`);
+    renderAVL(); avlAnimating = false; return;
+  }
+
+  const rots = [];
+  avlRoot = _avlInsert(avlRoot, v, rots);
+  renderAVL(); await sleep(300);
+
+  if (rots.length) await _showAVLRotations(rots);
+
+  renderAVL();
+  log('avlLog', 'insert', `<span class="val">${v}</span> inserted${rots.length ? ' \u2014 ' + rots.map(r=>r.kind).join(', ') + ' rotation' : ''} (height\u00a0=\u00a0${avlRoot ? avlRoot.h : 0})`);
+  avlAnimating = false;
+}
+
+async function avlRemove() {
+  if (avlAnimating) return;
+  const inp = $('avlInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!avlRoot) { log('avlLog', 'remove', 'tree is empty'); return; }
+  avlAnimating = true;
+
+  const { path, found } = _avlFindPath(avlRoot, v);
+  await _animateAVLPath(path, found ? 'bubble-active' : '');
+
+  if (!found) {
+    log('avlLog', 'remove', `<span class="val">${v}</span> not found`);
+    renderAVL(); avlAnimating = false; return;
+  }
+
+  await sleep(300);
+  const el = $('avlCanvas').querySelector(`[data-id="${found.id}"]`);
+  if (el) el.classList.add('animate-pop-out');
+  await sleep(440);
+
+  const rots = [];
+  avlRoot = _avlRemove(avlRoot, v, rots);
+  renderAVL(); await sleep(300);
+
+  if (rots.length) await _showAVLRotations(rots);
+
+  renderAVL();
+  log('avlLog', 'remove', `<span class="val">${v}</span> removed${rots.length ? ' \u2014 ' + rots.map(r=>r.kind).join(', ') + ' rotation' : ''}`);
+  avlAnimating = false;
+}
+
+async function avlSearch() {
+  if (avlAnimating) return;
+  const inp = $('avlInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!avlRoot) { log('avlLog', 'search', 'tree is empty'); return; }
+  avlAnimating = true;
+
+  const { path, found } = _avlFindPath(avlRoot, v);
+  await _animateAVLPath(path, found ? 'found' : '');
+  if (found) { log('avlLog', 'search', `<span class="val">${v}</span> found (depth\u00a0${path.length-1})`); await sleep(1800); }
+  else { log('avlLog', 'search', `<span class="val">${v}</span> not found`); }
+  renderAVL(); avlAnimating = false;
+}
+
+async function avlTraverse(order) {
+  if (avlAnimating) return;
+  if (!avlRoot) { log('avlLog', 'traverse', 'tree is empty'); return; }
+  avlAnimating = true;
+  const nodes = _avlCollect(avlRoot, order);
+  const visited = new Set();
+  for (const n of nodes) { visited.add(n.id); renderAVL(visited); await sleep(420); }
+  await sleep(280); renderAVL();
+  log('avlLog', 'traverse', `${order}: ${nodes.map(n=>`<span class="val">${n.v}</span>`).join(' \u2192 ')}`);
+  avlAnimating = false;
+}
+
+function avlClear() {
+  if (avlAnimating) return;
+  avlRoot = null; avlNextId = 1; renderAVL();
+  log('avlLog', 'clear', 'tree cleared');
+}
+
+// ─── Init AVL ───
+setAVLImpl('avl');
+
+// ═══════════════════════════════════════════════
+//  B-TREE — DATA & METADATA
+// ═══════════════════════════════════════════════
+const BTREE_T = 2; // minimum degree; max keys per node = 2t-1 = 3
+let btreeRoot = null;
+let btreeImpl = '2-3-4';
+let btreeAnimating = false;
+let btreeNextId = 1;
+
+const btreeImplMeta = {
+  '2-3-4': {
+    label: '2-3-4 Tree (t = 2)',
+    note: 'Minimum degree t\u00a0=\u00a02. Each non-root node holds 1\u20133 keys and 2\u20134 children. The root can have as few as 1 key. Splits happen proactively on the way down so no second pass is needed.',
+    complexity: [['insert','O(log n)'],['remove','O(log n)'],['search','O(log n)']]
+  }
+};
+
+sidebarData.btree = {
+  description: 'A B-Tree of minimum degree t is a balanced multi-way search tree where all leaves are at the same depth. Each internal node holds up to 2t\u22121 keys and 2t children. With t\u00a0=\u00a02 (a 2-3-4 tree), nodes hold 1\u20133 keys. Splits keep the tree balanced without extra traversals.'
+};
+
+const _prevUpdateSidebar6 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'btree') { _prevUpdateSidebar6(panel); return; }
+  const meta = btreeImplMeta[btreeImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.btree.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Split Property</h3><p>When a node is full (2t\u22121 keys), it splits: the median key promotes to the parent, and the left/right halves become two sibling nodes. All leaves remain at the same depth.</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+// ═══════════════════════════════════════════════
+//  B-TREE — IMPL SWITCHER
+// ═══════════════════════════════════════════════
+function setBTreeImpl(type) {
+  btreeImpl = type;
+  document.querySelectorAll('[data-btree-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.btreeImpl === type);
+  });
+  $('btreeImplNote').innerHTML = btreeImplMeta[type].note;
+  if ($('panel-btree').classList.contains('active')) updateSidebar('btree');
+  renderBTree();
+}
+
+// ═══════════════════════════════════════════════
+//  B-TREE — CORE ALGORITHMS
+// ═══════════════════════════════════════════════
+function _btnewNode(leaf) {
+  return { keys: [], children: [], leaf, id: btreeNextId++ };
+}
+
+// Split child at index ci of parent. Child must have 2t-1 keys.
+function _btSplitChild(parent, ci) {
+  const t = BTREE_T;
+  const child = parent.children[ci];
+  const sibling = _btnewNode(child.leaf);
+  const mid = child.keys[t - 1];
+  sibling.keys = child.keys.slice(t);
+  if (!child.leaf) sibling.children = child.children.slice(t);
+  child.keys = child.keys.slice(0, t - 1);
+  if (!child.leaf) child.children = child.children.slice(0, t);
+  parent.keys.splice(ci, 0, mid);
+  parent.children.splice(ci + 1, 0, sibling);
+  return mid;
+}
+
+// Insert v into a non-full node (recursive)
+function _btInsertNonFull(node, v, events) {
+  events.push({ type: 'visit', node });
+  if (node.leaf) {
+    let i = node.keys.length - 1;
+    while (i >= 0 && v < node.keys[i]) i--;
+    node.keys.splice(i + 1, 0, v);
+    events.push({ type: 'insert-key', node, v });
+  } else {
+    let i = node.keys.length - 1;
+    while (i >= 0 && v < node.keys[i]) i--;
+    i++;
+    if (node.children[i].keys.length === 2 * BTREE_T - 1) {
+      const mid = _btSplitChild(node, i);
+      events.push({ type: 'split', node, mid });
+      if (v > node.keys[i]) i++;
+    }
+    _btInsertNonFull(node.children[i], v, events);
+  }
+}
+
+function _btreeContains(node, v) {
+  let i = 0;
+  while (i < node.keys.length && v > node.keys[i]) i++;
+  if (i < node.keys.length && v === node.keys[i]) return true;
+  if (node.leaf) return false;
+  return _btreeContains(node.children[i], v);
+}
+
+function _btreeInsert(v, events) {
+  if (!btreeRoot) {
+    btreeRoot = _btnewNode(true);
+    btreeRoot.keys.push(v);
+    events.push({ type: 'insert-key', node: btreeRoot, v });
+    return;
+  }
+  if (_btreeContains(btreeRoot, v)) return; // duplicate
+  if (btreeRoot.keys.length === 2 * BTREE_T - 1) {
+    const newRoot = _btnewNode(false);
+    newRoot.children.push(btreeRoot);
+    btreeRoot = newRoot;
+    const mid = _btSplitChild(btreeRoot, 0);
+    events.push({ type: 'split', node: btreeRoot, mid });
+  }
+  _btInsertNonFull(btreeRoot, v, events);
+}
+
+function _btreeFindPath(root, v) {
+  const path = []; let cur = root;
+  while (cur) {
+    path.push(cur);
+    let i = 0;
+    while (i < cur.keys.length && v > cur.keys[i]) i++;
+    if (i < cur.keys.length && v === cur.keys[i]) return { path, found: cur, keyIdx: i };
+    if (cur.leaf) return { path, found: null, keyIdx: -1 };
+    cur = cur.children[i];
+  }
+  return { path, found: null, keyIdx: -1 };
+}
+
+function _btreePred(node) {
+  while (!node.leaf) node = node.children[node.children.length - 1];
+  return node.keys[node.keys.length - 1];
+}
+function _btreeSucc(node) {
+  while (!node.leaf) node = node.children[0];
+  return node.keys[0];
+}
+
+function _btMerge(parent, i, events) {
+  const left = parent.children[i], right = parent.children[i + 1];
+  left.keys.push(parent.keys[i]);
+  left.keys.push(...right.keys);
+  if (!left.leaf) left.children.push(...right.children);
+  parent.keys.splice(i, 1);
+  parent.children.splice(i + 1, 1);
+  events.push({ type: 'merge', node: parent });
+}
+
+function _btFill(parent, i, events) {
+  const t = BTREE_T;
+  if (i > 0 && parent.children[i - 1].keys.length >= t) {
+    const child = parent.children[i], sib = parent.children[i - 1];
+    child.keys.unshift(parent.keys[i - 1]);
+    parent.keys[i - 1] = sib.keys.pop();
+    if (!sib.leaf) child.children.unshift(sib.children.pop());
+    events.push({ type: 'borrow', node: parent });
+  } else if (i < parent.children.length - 1 && parent.children[i + 1].keys.length >= t) {
+    const child = parent.children[i], sib = parent.children[i + 1];
+    child.keys.push(parent.keys[i]);
+    parent.keys[i] = sib.keys.shift();
+    if (!sib.leaf) child.children.push(sib.children.shift());
+    events.push({ type: 'borrow', node: parent });
+  } else {
+    if (i < parent.children.length - 1) _btMerge(parent, i, events);
+    else { _btMerge(parent, i - 1, events); }
+  }
+}
+
+function _btreeRemoveRec(node, v, events) {
+  const t = BTREE_T;
+  events.push({ type: 'visit', node });
+  let i = 0;
+  while (i < node.keys.length && v > node.keys[i]) i++;
+
+  if (i < node.keys.length && node.keys[i] === v) {
+    if (node.leaf) {
+      node.keys.splice(i, 1);
+      events.push({ type: 'delete-key', node, v });
+    } else if (node.children[i].keys.length >= t) {
+      const pred = _btreePred(node.children[i]);
+      node.keys[i] = pred;
+      events.push({ type: 'replace', node, v: pred });
+      _btreeRemoveRec(node.children[i], pred, events);
+    } else if (node.children[i + 1].keys.length >= t) {
+      const succ = _btreeSucc(node.children[i + 1]);
+      node.keys[i] = succ;
+      events.push({ type: 'replace', node, v: succ });
+      _btreeRemoveRec(node.children[i + 1], succ, events);
+    } else {
+      _btMerge(node, i, events);
+      _btreeRemoveRec(node.children[i], v, events);
+    }
+  } else {
+    if (node.leaf) { events.push({ type: 'not-found', v }); return; }
+    const isLast = (i === node.children.length - 1);
+    if (node.children[i].keys.length < t) {
+      _btFill(node, i, events);
+      if (isLast && i > node.keys.length) i--;
+    }
+    _btreeRemoveRec(node.children[i], v, events);
+  }
+}
+
+function _btreeAllNodes(root) {
+  if (!root) return [];
+  const out = [], q = [root];
+  while (q.length) { const n = q.shift(); out.push(n); if (!n.leaf) n.children.forEach(c => q.push(c)); }
+  return out;
+}
+
+// ═══════════════════════════════════════════════
+//  B-TREE — LAYOUT
+// ═══════════════════════════════════════════════
+function layoutBTree(root, width, levelH, topPad) {
+  const keyW = 36, pad = 8;
+  const pos = new Map();
+  const levels = [];
+  let q = [root];
+  while (q.length) {
+    levels.push(q);
+    const next = [];
+    for (const n of q) if (!n.leaf) n.children.forEach(c => next.push(c));
+    q = next;
+  }
+  for (let lv = 0; lv < levels.length; lv++) {
+    const y = topPad + lv * levelH;
+    const lvNodes = levels[lv];
+    const totalW = lvNodes.reduce((a, n) => a + n.keys.length * keyW + 2 * pad, 0);
+    const spacing = Math.max(8, (width - totalW) / (lvNodes.length + 1));
+    let x = spacing;
+    for (const n of lvNodes) {
+      const w = n.keys.length * keyW + 2 * pad;
+      pos.set(n, { x: x + w / 2, y, w });
+      x += w + spacing;
+    }
+  }
+  return pos;
+}
+
+// ═══════════════════════════════════════════════
+//  B-TREE — RENDER
+// ═══════════════════════════════════════════════
+const BTREE_EMPTY = `<div class="empty-state"><span class="ornament">\u00a7</span>Insert a value to begin</div>`;
+
+function renderBTree(hlNodeIds, hlKeyStr) {
+  const tc = $('btreeCanvas'), ac = $('btreeImplCanvas');
+  if (!btreeRoot) { tc.innerHTML = BTREE_EMPTY; ac.innerHTML = BTREE_EMPTY; return; }
+  _renderBTreeSVG(tc, hlNodeIds || new Set(), hlKeyStr || new Set());
+  _renderBTreeStruct(ac, hlNodeIds || new Set());
+}
+
+function _renderBTreeSVG(c, hlNodeIds, hlKeyStr) {
+  const W = 560, levelH = 90, topPad = 36;
+  const keyW = 36, keyH = 30, pad = 8;
+  const pos = layoutBTree(btreeRoot, W, levelH, topPad);
+  let maxY = 0; for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+  const svgH = maxY + keyH + 40;
+  let svg = `<svg viewBox="0 0 ${W} ${svgH}" style="width:100%;height:${svgH}px;display:block">`;
+
+  const allNodes = _btreeAllNodes(btreeRoot);
+
+  // Edges
+  for (const node of allNodes) {
+    if (node.leaf) continue;
+    const { x: px, y: py, w: pw } = pos.get(node);
+    for (let ci = 0; ci < node.children.length; ci++) {
+      const cp = pos.get(node.children[ci]);
+      if (!cp) continue;
+      const nx = px - pw / 2 + (ci + 0.5) * pw / node.children.length;
+      svg += `<line class="edge-line" x1="${nx}" y1="${py + keyH/2}" x2="${cp.x}" y2="${cp.y - keyH/2}"/>`;
+    }
+  }
+
+  // Nodes
+  for (const node of allNodes) {
+    const { x, y, w } = pos.get(node);
+    const isHLNode = hlNodeIds.has(node.id);
+    const startX = x - w / 2 + pad;
+    for (let ki = 0; ki < node.keys.length; ki++) {
+      const kx = startX + ki * keyW;
+      const keyId = `${node.id}-${ki}`;
+      let cls = 'node-rect btree-key';
+      if (hlKeyStr.has(keyId)) cls += ' highlight';
+      else if (isHLNode) cls += ' path';
+      svg += `<rect class="${cls}" x="${kx}" y="${y - keyH/2}" width="${keyW}" height="${keyH}" rx="4"/>`;
+      svg += `<text class="node-text" x="${kx + keyW/2}" y="${y}">${node.keys[ki]}</text>`;
+    }
+    if (node.leaf) {
+      svg += `<text class="tree-meta-label" x="${x}" y="${y + keyH/2 + 11}">leaf</text>`;
+    }
+  }
+  svg += '</svg>'; c.innerHTML = svg;
+}
+
+function _renderBTreeStruct(c, hlNodeIds) {
+  const allNodes = _btreeAllNodes(btreeRoot);
+  let h = '<div class="impl-view"><div class="impl-section-label">Node structs (BFS order)</div><div class="tree-struct-view" style="overflow-x:auto">';
+  h += `<div class="tree-struct-header" style="grid-template-columns:2rem 1fr 2.5rem"><span>id</span><span style="text-align:left">keys</span><span>ch</span></div>`;
+  for (const n of allNodes) {
+    const row = hlNodeIds.has(n.id) ? ' row-highlight' : '';
+    const keys = n.keys.map(k => `<span class="struct-val">${k}</span>`).join(' ');
+    const ch = n.leaf ? '\u2013' : n.children.length;
+    h += `<div class="tree-struct-row${row}" style="grid-template-columns:2rem 1fr 2.5rem"><span>${n.id}</span><span style="text-align:left;padding-left:0.2rem;display:flex;gap:0.25rem">${keys}</span><span>${ch}</span></div>`;
+  }
+  const totalKeys = allNodes.reduce((a, n) => a + n.keys.length, 0);
+  h += `</div><div class="impl-info-row"><span class="impl-stat">nodes\u00a0=\u00a0${allNodes.length}</span><span class="impl-stat">keys\u00a0=\u00a0${totalKeys}</span><span class="impl-stat">t\u00a0=\u00a0${BTREE_T}</span></div></div>`;
+  c.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+//  B-TREE — ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+async function _animateBTreeEvents(events) {
+  for (const e of events) {
+    if (e.type === 'visit') {
+      renderBTree(new Set([e.node.id])); await sleep(360);
+    } else if (e.type === 'split') {
+      renderBTree(new Set([e.node.id])); await sleep(500);
+    } else if (e.type === 'insert-key' || e.type === 'delete-key' || e.type === 'replace') {
+      renderBTree(new Set([e.node.id])); await sleep(420);
+    } else if (e.type === 'merge' || e.type === 'borrow') {
+      renderBTree(new Set([e.node.id])); await sleep(420);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  B-TREE — OPERATIONS
+// ═══════════════════════════════════════════════
+async function btreeInsert() {
+  if (btreeAnimating) return;
+  const inp = $('btreeInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = ''; btreeAnimating = true;
+
+  const events = [];
+  _btreeInsert(v, events);
+  await _animateBTreeEvents(events);
+  renderBTree();
+  log('btreeLog', 'insert', `<span class="val">${v}</span> inserted`);
+  btreeAnimating = false;
+}
+
+async function btreeRemove() {
+  if (btreeAnimating) return;
+  const inp = $('btreeInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!btreeRoot) { log('btreeLog', 'remove', 'tree is empty'); return; }
+  btreeAnimating = true;
+
+  const { found } = _btreeFindPath(btreeRoot, v);
+  if (!found) {
+    log('btreeLog', 'remove', `<span class="val">${v}</span> not found`);
+    renderBTree(); btreeAnimating = false; return;
+  }
+
+  const events = [];
+  _btreeRemoveRec(btreeRoot, v, events);
+  // Shrink root if emptied
+  if (btreeRoot.keys.length === 0 && !btreeRoot.leaf) btreeRoot = btreeRoot.children[0] || null;
+  if (btreeRoot && btreeRoot.keys.length === 0) btreeRoot = null;
+
+  await _animateBTreeEvents(events);
+  renderBTree();
+  log('btreeLog', 'remove', `<span class="val">${v}</span> removed`);
+  btreeAnimating = false;
+}
+
+async function btreeSearch() {
+  if (btreeAnimating) return;
+  const inp = $('btreeInput'), v = parseInt(inp.value, 10);
+  if (isNaN(v)) return; inp.value = '';
+  if (!btreeRoot) { log('btreeLog', 'search', 'tree is empty'); return; }
+  btreeAnimating = true;
+
+  const { path, found, keyIdx } = _btreeFindPath(btreeRoot, v);
+  for (let i = 0; i < path.length; i++) {
+    const node = path[i];
+    renderBTree(new Set([node.id])); await sleep(380);
+    if (i === path.length - 1 && found) {
+      renderBTree(new Set([node.id]), new Set([`${node.id}-${keyIdx}`]));
+      await sleep(900);
+    }
+  }
+  if (found) { log('btreeLog', 'search', `<span class="val">${v}</span> found (depth\u00a0${path.length-1})`); }
+  else { log('btreeLog', 'search', `<span class="val">${v}</span> not found`); }
+  renderBTree(); btreeAnimating = false;
+}
+
+function btreeClear() {
+  if (btreeAnimating) return;
+  btreeRoot = null; btreeNextId = 1; renderBTree();
+  log('btreeLog', 'clear', 'tree cleared');
+}
+
+// ─── Init B-Tree ───
+setBTreeImpl('2-3-4');

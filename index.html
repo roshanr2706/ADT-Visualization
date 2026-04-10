@@ -26,6 +26,10 @@
   <button class="nav-btn" data-panel="linkedlist">Linked List</button>
   <button class="nav-btn" data-panel="queue">Queue</button>
   <button class="nav-btn" data-panel="heap">Heap / Priority Queue</button>
+  <button class="nav-btn" data-panel="binarytree">Binary Tree</button>
+  <button class="nav-btn" data-panel="bst">BST</button>
+  <button class="nav-btn" data-panel="avl">AVL Tree</button>
+  <button class="nav-btn" data-panel="btree">B-Tree</button>
 </nav>
 
 <!-- ─── Page Body ─── -->
@@ -208,19 +212,198 @@
       <div class="viz-dual" style="grid-template-columns:1fr 1fr">
         <div class="viz-pane">
           <div class="viz-pane-label">Binary Tree (Abstract)</div>
-          <div class="viz-canvas" id="heapTreeCanvas">
+          <div class="viz-canvas" id="heapCanvas">
             <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
           </div>
         </div>
         <div class="viz-pane">
           <div class="viz-pane-label">Array Representation</div>
-          <div class="viz-canvas" id="heapArrayCanvas">
+          <div class="viz-canvas" id="heapImplCanvas">
             <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
           </div>
         </div>
       </div>
 
       <div class="op-log" id="heapLog"></div>
+    </div>
+
+    <!-- ═══ BINARY TREE ═══ -->
+    <div class="panel" id="panel-binarytree">
+      <div class="section-header">
+        <h2>Binary Tree</h2>
+        <span class="issue-num">Node-based — no ordering invariant</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-bt-impl="linked" onclick="setBTImpl('linked')">Linked Nodes</button>
+      </div>
+
+      <div class="impl-note" id="btImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="btInput" type="number" placeholder="Value" style="width:90px">
+        <button class="ctrl-btn" onclick="btInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="btDelete()">Delete</button>
+        <button class="ctrl-btn outline" onclick="btSearch()">Search</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn outline" onclick="btTraverse('inorder')">In-order</button>
+        <button class="ctrl-btn outline" onclick="btTraverse('preorder')">Pre-order</button>
+        <button class="ctrl-btn outline" onclick="btTraverse('postorder')">Post-order</button>
+        <button class="ctrl-btn outline" onclick="btTraverse('levelorder')">Level-order</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="btClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Binary Tree (Abstract)</div>
+          <div class="viz-canvas" id="btCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Node Struct View</div>
+          <div class="viz-canvas" id="btImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="btLog"></div>
+    </div>
+
+    <!-- ═══ BST ═══ -->
+    <div class="panel" id="panel-bst">
+      <div class="section-header">
+        <h2>Binary Search Tree</h2>
+        <span class="issue-num">Ordered — left &lt; node &lt; right</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-bst-impl="bst" onclick="setBSTImpl('bst')">Linked Nodes</button>
+      </div>
+
+      <div class="impl-note" id="bstImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="bstInput" type="number" placeholder="Value" style="width:90px">
+        <button class="ctrl-btn" onclick="bstInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="bstRemove()">Remove</button>
+        <button class="ctrl-btn outline" onclick="bstSearch()">Search</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn outline" onclick="bstTraverse('inorder')">In-order</button>
+        <button class="ctrl-btn outline" onclick="bstTraverse('preorder')">Pre-order</button>
+        <button class="ctrl-btn outline" onclick="bstTraverse('postorder')">Post-order</button>
+        <button class="ctrl-btn outline" onclick="bstTraverse('levelorder')">Level-order</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="bstClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">BST (Abstract)</div>
+          <div class="viz-canvas" id="bstCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Node Struct View</div>
+          <div class="viz-canvas" id="bstImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="bstLog"></div>
+    </div>
+
+    <!-- ═══ AVL TREE ═══ -->
+    <div class="panel" id="panel-avl">
+      <div class="section-header">
+        <h2>AVL Tree</h2>
+        <span class="issue-num">Self-balancing BST — |bf| ≤ 1 at every node</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-avl-impl="avl" onclick="setAVLImpl('avl')">Linked Nodes</button>
+      </div>
+
+      <div class="impl-note" id="avlImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="avlInput" type="number" placeholder="Value" style="width:90px">
+        <button class="ctrl-btn" onclick="avlInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="avlRemove()">Remove</button>
+        <button class="ctrl-btn outline" onclick="avlSearch()">Search</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn outline" onclick="avlTraverse('inorder')">In-order</button>
+        <button class="ctrl-btn outline" onclick="avlTraverse('preorder')">Pre-order</button>
+        <button class="ctrl-btn outline" onclick="avlTraverse('postorder')">Post-order</button>
+        <button class="ctrl-btn outline" onclick="avlTraverse('levelorder')">Level-order</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="avlClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">AVL Tree (Abstract)</div>
+          <div class="viz-canvas" id="avlCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Node Struct View</div>
+          <div class="viz-canvas" id="avlImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="avlLog"></div>
+    </div>
+
+    <!-- ═══ B-TREE ═══ -->
+    <div class="panel" id="panel-btree">
+      <div class="section-header">
+        <h2>B-Tree</h2>
+        <span class="issue-num">Balanced multi-way tree — minimum degree t = 2</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Variant:</span>
+        <button class="impl-btn active" data-btree-impl="2-3-4" onclick="setBTreeImpl('2-3-4')">2-3-4 Tree (t = 2)</button>
+      </div>
+
+      <div class="impl-note" id="btreeImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="btreeInput" type="number" placeholder="Value" style="width:90px">
+        <button class="ctrl-btn" onclick="btreeInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="btreeRemove()">Remove</button>
+        <button class="ctrl-btn outline" onclick="btreeSearch()">Search</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="btreeClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+        <div class="viz-pane">
+          <div class="viz-pane-label">B-Tree (Abstract)</div>
+          <div class="viz-canvas" id="btreeCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Node Struct View</div>
+          <div class="viz-canvas" id="btreeImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a value to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="btreeLog"></div>
     </div>
 
   </main>
