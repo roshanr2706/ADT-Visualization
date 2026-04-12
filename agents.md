@@ -44,6 +44,10 @@ All eight modules are in `app.js`. Their panel IDs, state prefixes, and approxim
 | BST | `bst` | `bst` | `bstRoot` (node or null) | line 1884 |
 | AVL Tree | `avl` | `avl` | `avlRoot` (node or null) | line 2138 |
 | B-Tree | `btree` | `btree` | `btreeRoot` (node or null) | line 2444 |
+| Hash Table | `hashtable` | `ht` | `htBuckets` (array) | line ~2840 |
+| Dictionary | `dictionary` | `dict` | `dictData` (map/BST) | line ~3140 |
+| Union-Find | `unionfind` | `uf` | `ufParent[]`, `ufRank[]` | line ~3475 |
+| Graph | `graph` | `graph` | `graphNodes[]`, `graphEdges[]` | line ~3776 |
 
 Tree-based modules (Binary Tree, BST, AVL, B-Tree) also carry `<m>NextId` — a monotonically increasing counter used to stamp each node with a stable identity for `highlightSet` lookups.
 
@@ -162,8 +166,12 @@ const heapImplMeta = {
 | BST | `_prevUpdateSidebar4` | 1901 |
 | AVL Tree | `_prevUpdateSidebar5` | 2155 |
 | B-Tree | `_prevUpdateSidebar6` | 2461 |
+| Hash Table | `_prevUpdateSidebar7` | 2867 |
+| Dictionary | `_prevUpdateSidebar8` | 3142 |
+| Union-Find | `_prevUpdateSidebar9` | 3477 |
+| Graph | `_prevUpdateSidebar10` | ~3776 |
 
-When adding the next module, capture with `_prevUpdateSidebar7`. Use numbered suffixes to avoid collisions — the exact name doesn't matter as long as it is unique in the file.
+When adding the next module, capture with `_prevUpdateSidebar11`. Use numbered suffixes to avoid collisions — the exact name doesn't matter as long as it is unique in the file.
 
 The standard monkey-patch pattern (from [app.js:439–460](app.js#L439-L460)):
 

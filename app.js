@@ -79,6 +79,17 @@ function updateSidebar(panel) {
 // ═══════════════════════════════════════════════
 //  NAVIGATION
 // ═══════════════════════════════════════════════
+$('sectionTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.section-tab');
+  if (!tab) return;
+  document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const section = tab.dataset.section;
+  $('section-ds').style.display         = section === 'ds'         ? '' : 'none';
+  $('navStrip').style.display           = section === 'ds'         ? '' : 'none';
+  $('section-algorithms').style.display = section === 'algorithms' ? '' : 'none';
+});
+
 $('navStrip').addEventListener('click', e => {
   const btn = e.target.closest('.nav-btn');
   if (!btn) return;
@@ -2834,3 +2845,2174 @@ function btreeClear() {
 
 // ─── Init B-Tree ───
 setBTreeImpl('2-3-4');
+
+// ═══════════════════════════════════════════════
+//  HASH TABLE
+// ═══════════════════════════════════════════════
+
+const HT_SIZE = 8;
+let htImpl = 'chaining';
+let htAnimating = false;
+let htChains = Array.from({length: HT_SIZE}, () => []);
+let htSlots = Array(HT_SIZE).fill(null);
+
+function htHash(key) { return ((key % HT_SIZE) + HT_SIZE) % HT_SIZE; }
+
+const htImplMeta = {
+  'chaining': {
+    label: 'Separate Chaining',
+    note: 'Each slot holds a linked list of <em>(key, value)</em> pairs. Collisions chain onto the list at <code>h(k) = k mod 8</code>. Load factor can exceed 1.0 without issue.',
+    complexity: [['put','O(1) avg'],['get','O(1) avg'],['remove','O(1) avg'],['worst (all collide)','O(n)']]
+  },
+  'open-addr': {
+    label: 'Open Addressing — Linear Probe',
+    note: 'All entries live in the array itself — no pointers. On collision, probe forward (idx + 1 mod N) until an empty slot. Removed slots become <em>tombstones ⊗</em> so later probes are not prematurely stopped.',
+    complexity: [['put','O(1) avg'],['get','O(1) avg'],['remove','O(1) avg'],['worst (full table)','O(n)']]
+  }
+};
+
+sidebarData.hashtable = {
+  description: 'A hash table maps keys to values using a hash function <em>h(k) = k mod N</em> to pick an array index. When two keys land on the same index (a <em>collision</em>), it is resolved with chaining (a linked list per slot) or open addressing (linear probing within the array).'
+};
+
+const _prevUpdateSidebar7 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'hashtable') { _prevUpdateSidebar7(panel); return; }
+  const meta = htImplMeta[htImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.hashtable.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Hash Function</h3><p>This demo uses <code>h(k) = k mod 8</code>. A good hash function distributes keys uniformly to minimise collisions and keep chains short (ideally O(1) length).</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+function setHTImpl(type) {
+  htImpl = type;
+  document.querySelectorAll('[data-ht-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.htImpl === type);
+  });
+  $('htImplNote').innerHTML = htImplMeta[type].note;
+  htChains = Array.from({length: HT_SIZE}, () => []);
+  htSlots = Array(HT_SIZE).fill(null);
+  renderHT();
+  if ($('panel-hashtable').classList.contains('active')) updateSidebar('hashtable');
+}
+
+function renderHT(hlSlot = -1, hlKey = null, hlCls = '') {
+  const ac = $('htCanvas'), ic = $('htImplCanvas');
+  const hasData = htImpl === 'chaining'
+    ? htChains.some(c => c.length > 0)
+    : htSlots.some(s => s !== null);
+
+  if (!hasData) {
+    ac.innerHTML = `<div class="empty-state"><span class="ornament">§</span>Put a key\u2013value pair to begin</div>`;
+    ic.innerHTML = `<div class="empty-state"><span class="ornament">§</span>Put a key\u2013value pair to begin</div>`;
+    return;
+  }
+
+  // Abstract pane: sorted KV list
+  let pairs = [];
+  if (htImpl === 'chaining') {
+    for (const chain of htChains) for (const e of chain) pairs.push(e);
+  } else {
+    for (const s of htSlots) if (s && s.state === 'occupied') pairs.push({key: s.key, val: s.val});
+  }
+  pairs.sort((a, b) => a.key - b.key);
+
+  let html = '<div class="ht-abstract">';
+  html += '<div class="ht-abstract-hdr"><span>key</span><span>value</span><span>slot h(k)</span></div>';
+  for (const {key, val} of pairs) {
+    const isHL = hlKey !== null && key === hlKey;
+    html += `<div class="ht-kv-row${isHL ? ' ' + hlCls : ''}">
+      <span class="ht-cn-key">${key}</span>
+      <span class="ht-arrow-sym">\u2192</span>
+      <span class="ht-cn-val">${val}</span>
+      <span class="ht-kv-slot">${htHash(key)}</span>
+    </div>`;
+  }
+  html += '</div>';
+  ac.innerHTML = html;
+
+  if (htImpl === 'chaining') _renderHTChaining(ic, hlSlot, hlKey, hlCls);
+  else _renderHTOpenAddr(ic, hlSlot, hlKey, hlCls);
+}
+
+function _renderHTChaining(ic, hlSlot, hlKey, hlCls) {
+  let html = '<div class="ht-table">';
+  for (let i = 0; i < HT_SIZE; i++) {
+    const chain = htChains[i];
+    const isHL = i === hlSlot;
+    html += `<div class="ht-row${isHL ? ' ht-row-active' : ''}">`;
+    html += `<span class="ht-idx">${i}</span>`;
+    html += `<div class="ht-chain-wrap">`;
+    html += `<div class="ht-bucket${chain.length === 0 ? ' ht-bucket-null' : ''}">`;
+    html += chain.length === 0 ? `<span class="ht-null-sym">\u2205</span>` : `<span class="ht-ptr-sym">\u25cf</span>`;
+    html += `</div>`;
+    for (const {key, val} of chain) {
+      const nodeHL = isHL && hlKey !== null && key === hlKey;
+      html += `<span class="ht-chain-arr">\u2192</span>`;
+      html += `<div class="ht-cn-box${nodeHL ? ' ' + hlCls : ''}">`;
+      html += `<span class="ht-cn-key">${key}</span><span class="ht-cn-sep">:</span><span class="ht-cn-val">${val}</span>`;
+      html += `</div>`;
+    }
+    if (chain.length > 0) html += `<span class="ht-chain-arr">\u2192</span><span class="ht-null-sym">\u2205</span>`;
+    html += `</div></div>`;
+  }
+  html += '</div>';
+  ic.innerHTML = html;
+}
+
+function _renderHTOpenAddr(ic, hlSlot, hlKey, hlCls) {
+  let html = '<div class="ht-table">';
+  for (let i = 0; i < HT_SIZE; i++) {
+    const slot = htSlots[i];
+    const isHL = i === hlSlot;
+    html += `<div class="ht-row${isHL ? ' ht-row-active' : ''}">`;
+    html += `<span class="ht-idx">${i}</span>`;
+    if (!slot) {
+      html += `<div class="ht-bucket ht-bucket-null"><span class="ht-null-sym">\u2205</span></div>`;
+    } else if (slot.state === 'deleted') {
+      html += `<div class="ht-bucket ht-bucket-tomb"><span class="ht-tomb-sym">\u2297 tombstone</span></div>`;
+    } else {
+      const nodeHL = isHL && hlKey !== null && slot.key === hlKey;
+      html += `<div class="ht-bucket ht-bucket-occ${nodeHL ? ' ' + hlCls : ''}">`;
+      html += `<span class="ht-cn-key">${slot.key}</span><span class="ht-cn-sep">:</span><span class="ht-cn-val">${slot.val}</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  html += '</div>';
+  ic.innerHTML = html;
+}
+
+async function htPut() {
+  if (htAnimating) return;
+  const key = parseInt($('htKeyInput').value, 10);
+  const val = parseInt($('htValInput').value, 10);
+  if (isNaN(key) || isNaN(val)) return;
+  $('htKeyInput').value = ''; $('htValInput').value = '';
+  htAnimating = true;
+  const h = htHash(key);
+
+  if (htImpl === 'chaining') {
+    renderHT(h); await sleep(380);
+    const ex = htChains[h].find(e => e.key === key);
+    if (ex) {
+      ex.val = val;
+      renderHT(h, key, 'ht-found'); await sleep(500);
+      log('htLog', 'put', `updated <span class="val">${key}</span> \u2192 <span class="val">${val}</span> (slot\u00a0${h})`);
+    } else {
+      htChains[h].push({key, val});
+      renderHT(h, key, 'ht-found'); await sleep(500);
+      log('htLog', 'put', `inserted <span class="val">${key}</span> \u2192 <span class="val">${val}</span> at slot\u00a0${h} (chain len\u00a0${htChains[h].length})`);
+    }
+  } else {
+    let dest = -1, firstTomb = -1;
+    for (let p = 0; p < HT_SIZE; p++) {
+      const i = (h + p) % HT_SIZE;
+      renderHT(i); await sleep(280);
+      const s = htSlots[i];
+      if (!s) { dest = firstTomb !== -1 ? firstTomb : i; break; }
+      if (s.state === 'deleted') { if (firstTomb === -1) firstTomb = i; }
+      else if (s.key === key) {
+        s.val = val;
+        renderHT(i, key, 'ht-found'); await sleep(500);
+        log('htLog', 'put', `updated <span class="val">${key}</span> \u2192 <span class="val">${val}</span> at slot\u00a0${i}`);
+        renderHT(); htAnimating = false; return;
+      }
+    }
+    if (dest === -1) dest = firstTomb;
+    if (dest === -1) {
+      log('htLog', 'put', 'table is full \u2014 cannot insert');
+      renderHT(); htAnimating = false; return;
+    }
+    htSlots[dest] = {key, val, state: 'occupied'};
+    renderHT(dest, key, 'ht-found'); await sleep(500);
+    const probed = (dest - h + HT_SIZE) % HT_SIZE;
+    log('htLog', 'put', `inserted <span class="val">${key}</span> \u2192 <span class="val">${val}</span> at slot\u00a0${dest}${probed ? ` (${probed} probe${probed > 1 ? 's' : ''})` : ''}`);
+  }
+  renderHT(); htAnimating = false;
+}
+
+async function htGet() {
+  if (htAnimating) return;
+  const key = parseInt($('htKeyInput').value, 10);
+  if (isNaN(key)) return;
+  htAnimating = true;
+  const h = htHash(key);
+
+  if (htImpl === 'chaining') {
+    renderHT(h); await sleep(380);
+    const ex = htChains[h].find(e => e.key === key);
+    if (ex) {
+      renderHT(h, key, 'ht-found'); await sleep(800);
+      log('htLog', 'get', `<span class="val">${key}</span> \u2192 <span class="val">${ex.val}</span> (slot\u00a0${h})`);
+    } else {
+      log('htLog', 'get', `<span class="val">${key}</span> not found`);
+    }
+  } else {
+    let found = false;
+    for (let p = 0; p < HT_SIZE; p++) {
+      const i = (h + p) % HT_SIZE;
+      renderHT(i); await sleep(300);
+      const s = htSlots[i];
+      if (!s) break;
+      if (s.state === 'occupied' && s.key === key) {
+        renderHT(i, key, 'ht-found'); await sleep(800);
+        log('htLog', 'get', `<span class="val">${key}</span> \u2192 <span class="val">${s.val}</span> (slot\u00a0${i})`);
+        found = true; break;
+      }
+    }
+    if (!found) log('htLog', 'get', `<span class="val">${key}</span> not found`);
+  }
+  renderHT(); htAnimating = false;
+}
+
+async function htRemove() {
+  if (htAnimating) return;
+  const key = parseInt($('htKeyInput').value, 10);
+  if (isNaN(key)) return;
+  htAnimating = true;
+  const h = htHash(key);
+
+  if (htImpl === 'chaining') {
+    renderHT(h); await sleep(380);
+    const idx = htChains[h].findIndex(e => e.key === key);
+    if (idx !== -1) {
+      renderHT(h, key, 'ht-danger'); await sleep(500);
+      htChains[h].splice(idx, 1);
+      renderHT(h); await sleep(180);
+      log('htLog', 'remove', `<span class="val">${key}</span> removed from slot\u00a0${h}`);
+    } else {
+      log('htLog', 'remove', `<span class="val">${key}</span> not found`);
+    }
+  } else {
+    let found = false;
+    for (let p = 0; p < HT_SIZE; p++) {
+      const i = (h + p) % HT_SIZE;
+      renderHT(i); await sleep(300);
+      const s = htSlots[i];
+      if (!s) break;
+      if (s.state === 'occupied' && s.key === key) {
+        renderHT(i, key, 'ht-danger'); await sleep(500);
+        htSlots[i] = {state: 'deleted'};
+        renderHT(i); await sleep(180);
+        log('htLog', 'remove', `<span class="val">${key}</span> removed \u2014 tombstone \u2297 at slot\u00a0${i}`);
+        found = true; break;
+      }
+    }
+    if (!found) log('htLog', 'remove', `<span class="val">${key}</span> not found`);
+  }
+  renderHT(); htAnimating = false;
+}
+
+function htClear() {
+  if (htAnimating) return;
+  htChains = Array.from({length: HT_SIZE}, () => []);
+  htSlots = Array(HT_SIZE).fill(null);
+  renderHT();
+  log('htLog', 'clear', 'table cleared');
+}
+
+// ─── Init Hash Table ───
+setHTImpl('chaining');
+
+// ═══════════════════════════════════════════════
+//  DICTIONARY
+// ═══════════════════════════════════════════════
+
+const DICT_HT_SIZE = 8;
+let dictImpl = 'hashmap';
+let dictAnimating = false;
+let dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+let dictBSTRoot = null;
+let dictBSTNextId = 1;
+
+function dictHash(key) { return ((key % DICT_HT_SIZE) + DICT_HT_SIZE) % DICT_HT_SIZE; }
+
+const dictImplMeta = {
+  'hashmap': {
+    label: 'Hash Map \u2014 Separate Chaining',
+    note: 'Keys are hashed to array indices; collisions append to a linked list at that slot. Expected O(1) per operation. Insertion order is not preserved and keys are not sorted.',
+    complexity: [['insert','O(1) avg'],['lookup','O(1) avg'],['delete','O(1) avg'],['in-order scan','O(n log n) sort']]
+  },
+  'bst': {
+    label: 'BST-backed',
+    note: 'Keys are stored in a Binary Search Tree ordered left\u00a0<\u00a0node\u00a0<\u00a0right. In-order traversal yields keys in sorted order. Tree height h determines operation cost.',
+    complexity: [['insert','O(h)'],['lookup','O(h)'],['delete','O(h)'],['in-order traversal','O(n)']]
+  }
+};
+
+sidebarData.dictionary = {
+  description: 'A dictionary (map) associates unique <em>keys</em> with <em>values</em>. Backing structure determines trade-offs: hash maps give expected O(1) ops but no ordering; BST-backed dicts maintain sorted key order with O(h) ops where h is tree height.'
+};
+
+const _prevUpdateSidebar8 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'dictionary') { _prevUpdateSidebar8(panel); return; }
+  const meta = dictImplMeta[dictImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.dictionary.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  const extra = dictImpl === 'bst'
+    ? `<div class="sidebar-section"><h3>Key Order</h3><p>In-order traversal of the BST yields all keys in sorted ascending order \u2014 a property unique to tree-backed dictionaries, unavailable in hash maps.</p></div>`
+    : `<div class="sidebar-section"><h3>Load Factor</h3><p>Performance degrades when entries\u00a0/\u00a0slots exceeds ~0.7. Real implementations resize (double the array) to keep expected chain length O(1).</p></div>`;
+  html += extra;
+  $('sidebarContent').innerHTML = html;
+};
+
+function setDictImpl(type) {
+  dictImpl = type;
+  document.querySelectorAll('[data-dict-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.dictImpl === type);
+  });
+  $('dictImplNote').innerHTML = dictImplMeta[type].note;
+  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictBSTRoot = null; dictBSTNextId = 1;
+  renderDict();
+  if ($('panel-dictionary').classList.contains('active')) updateSidebar('dictionary');
+}
+
+function renderDict(hlSlot = -1, hlKey = null, hlCls = '', hlBSTSet = new Set(), hlBSTCls = {}) {
+  const ac = $('dictCanvas'), ic = $('dictImplCanvas');
+  const hasData = dictImpl === 'hashmap' ? dictChains.some(c => c.length > 0) : dictBSTRoot !== null;
+
+  if (!hasData) {
+    ac.innerHTML = `<div class="empty-state"><span class="ornament">\u00a7</span>Insert a key\u2013value pair to begin</div>`;
+    ic.innerHTML = `<div class="empty-state"><span class="ornament">\u00a7</span>Insert a key\u2013value pair to begin</div>`;
+    return;
+  }
+
+  if (dictImpl === 'hashmap') {
+    let pairs = [];
+    for (const chain of dictChains) for (const e of chain) pairs.push(e);
+    pairs.sort((a, b) => a.key - b.key);
+    let html = '<div class="ht-abstract">';
+    html += '<div class="ht-abstract-hdr"><span>key</span><span>value</span><span>slot</span></div>';
+    for (const {key, val} of pairs) {
+      const isHL = hlKey !== null && key === hlKey;
+      html += `<div class="ht-kv-row${isHL ? ' ' + hlCls : ''}">
+        <span class="ht-cn-key">${key}</span>
+        <span class="ht-arrow-sym">\u2192</span>
+        <span class="ht-cn-val">${val}</span>
+        <span class="ht-kv-slot">${dictHash(key)}</span>
+      </div>`;
+    }
+    html += '</div>';
+    ac.innerHTML = html;
+    _renderDictChaining(ic, hlSlot, hlKey, hlCls);
+  } else {
+    // BST-backed: left = KV table sorted by key; right = BST tree
+    const inorder = _dictBSTInorder(dictBSTRoot);
+    let html = '<div class="ht-abstract">';
+    html += '<div class="ht-abstract-hdr"><span>key</span><span>value</span></div>';
+    for (const n of inorder) {
+      const isHL = hlBSTSet.has(n.id);
+      html += `<div class="ht-kv-row${isHL ? ' ht-found' : ''}">
+        <span class="ht-cn-key">${n.key}</span>
+        <span class="ht-arrow-sym">\u2192</span>
+        <span class="ht-cn-val">${n.val}</span>
+      </div>`;
+    }
+    html += `<div style="padding:0.3rem 0.4rem;font-family:'DM Mono',monospace;font-size:0.52rem;color:var(--muted);border-top:1px dotted var(--rule)">in-order \u2192 keys sorted</div>`;
+    html += '</div>';
+    ac.innerHTML = html;
+    _renderDictBSTTree(ic, hlBSTSet, hlBSTCls);
+  }
+}
+
+function _renderDictChaining(ic, hlSlot, hlKey, hlCls) {
+  let html = '<div class="ht-table">';
+  for (let i = 0; i < DICT_HT_SIZE; i++) {
+    const chain = dictChains[i];
+    const isHL = i === hlSlot;
+    html += `<div class="ht-row${isHL ? ' ht-row-active' : ''}">`;
+    html += `<span class="ht-idx">${i}</span>`;
+    html += `<div class="ht-chain-wrap">`;
+    html += `<div class="ht-bucket${chain.length === 0 ? ' ht-bucket-null' : ''}">`;
+    html += chain.length === 0 ? `<span class="ht-null-sym">\u2205</span>` : `<span class="ht-ptr-sym">\u25cf</span>`;
+    html += `</div>`;
+    for (const {key, val} of chain) {
+      const nodeHL = isHL && hlKey !== null && key === hlKey;
+      html += `<span class="ht-chain-arr">\u2192</span>`;
+      html += `<div class="ht-cn-box${nodeHL ? ' ' + hlCls : ''}">`;
+      html += `<span class="ht-cn-key">${key}</span><span class="ht-cn-sep">:</span><span class="ht-cn-val">${val}</span>`;
+      html += `</div>`;
+    }
+    if (chain.length > 0) html += `<span class="ht-chain-arr">\u2192</span><span class="ht-null-sym">\u2205</span>`;
+    html += `</div></div>`;
+  }
+  html += '</div>';
+  ic.innerHTML = html;
+}
+
+// ── Dictionary BST helpers ──
+function _dictBSTFind(root, key) {
+  let cur = root;
+  while (cur) {
+    if (key === cur.key) return cur;
+    cur = key < cur.key ? cur.left : cur.right;
+  }
+  return null;
+}
+
+function _dictBSTFindPath(root, key) {
+  const path = []; let cur = root;
+  while (cur) {
+    path.push(cur);
+    if (key === cur.key) return {path, found: cur};
+    cur = key < cur.key ? cur.left : cur.right;
+  }
+  return {path, found: null};
+}
+
+function _dictBSTInorder(root) {
+  const out = [];
+  (function w(n) { if (!n) return; w(n.left); out.push(n); w(n.right); })(root);
+  return out;
+}
+
+function _dictBSTInsert(key, val) {
+  const node = {key, val, left: null, right: null, id: dictBSTNextId++};
+  if (!dictBSTRoot) { dictBSTRoot = node; return; }
+  let cur = dictBSTRoot;
+  while (true) {
+    if (key === cur.key) { cur.val = val; return; }
+    if (key < cur.key) { if (!cur.left) { cur.left = node; return; } cur = cur.left; }
+    else               { if (!cur.right) { cur.right = node; return; } cur = cur.right; }
+  }
+}
+
+function _dictBSTRemove(root, key) {
+  if (!root) return null;
+  if (key < root.key) { root.left = _dictBSTRemove(root.left, key); }
+  else if (key > root.key) { root.right = _dictBSTRemove(root.right, key); }
+  else {
+    if (!root.left) return root.right;
+    if (!root.right) return root.left;
+    let succ = root.right; while (succ.left) succ = succ.left;
+    root.key = succ.key; root.val = succ.val;
+    root.right = _dictBSTRemove(root.right, succ.key);
+  }
+  return root;
+}
+
+function _renderDictBSTTree(c, hlSet, hlCls) {
+  if (!dictBSTRoot) {
+    c.innerHTML = `<div class="empty-state"><span class="ornament">\u00a7</span>Insert a key\u2013value pair to begin</div>`;
+    return;
+  }
+  const W = 520, lH = 72, top = 38, r = 22;
+  const pos = layoutBinaryTree(dictBSTRoot, W, lH, top);
+  let maxY = 0; for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+  let svg = `<svg viewBox="0 0 ${W} ${maxY + r + 30}" style="width:100%;height:${maxY + r + 30}px;display:block">`;
+  for (const [node, {x, y}] of pos) {
+    if (node.left && pos.has(node.left)) { const p = pos.get(node.left); svg += `<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+    if (node.right && pos.has(node.right)) { const p = pos.get(node.right); svg += `<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+  }
+  for (const [node, {x, y}] of pos) {
+    const ex = hlCls[node.id] || (hlSet.has(node.id) ? 'bubble-active' : '');
+    svg += `<circle class="node-circle${ex ? ' ' + ex : ''}" cx="${x}" cy="${y}" r="${r}"/>`;
+    svg += `<text class="node-text dict-kv-key" x="${x}" y="${y - 5}">${node.key}</text>`;
+    svg += `<text class="node-text dict-kv-val" x="${x}" y="${y + 9}">${node.val}</text>`;
+  }
+  svg += '</svg>';
+  c.innerHTML = svg;
+}
+
+async function dictInsert() {
+  if (dictAnimating) return;
+  const key = parseInt($('dictKeyInput').value, 10);
+  const val = parseInt($('dictValInput').value, 10);
+  if (isNaN(key) || isNaN(val)) return;
+  $('dictKeyInput').value = ''; $('dictValInput').value = '';
+  dictAnimating = true;
+
+  if (dictImpl === 'hashmap') {
+    const h = dictHash(key);
+    renderDict(h); await sleep(380);
+    const ex = dictChains[h].find(e => e.key === key);
+    if (ex) {
+      ex.val = val;
+      renderDict(h, key, 'ht-found'); await sleep(500);
+      log('dictLog', 'insert', `updated <span class="val">${key}</span> \u2192 <span class="val">${val}</span>`);
+    } else {
+      dictChains[h].push({key, val});
+      renderDict(h, key, 'ht-found'); await sleep(500);
+      log('dictLog', 'insert', `inserted <span class="val">${key}</span> \u2192 <span class="val">${val}</span> at slot\u00a0${h}`);
+    }
+  } else {
+    const {path} = _dictBSTFindPath(dictBSTRoot, key);
+    for (let i = 0; i < path.length; i++) {
+      const vis = new Set(path.slice(0, i + 1).map(n => n.id));
+      const cls = {}; for (const id of vis) cls[id] = 'path';
+      renderDict(-1, null, '', vis, cls); await sleep(380);
+    }
+    _dictBSTInsert(key, val);
+    const newNode = _dictBSTFind(dictBSTRoot, key);
+    if (newNode) {
+      renderDict(-1, null, '', new Set([newNode.id]), {[newNode.id]: 'found'});
+      await sleep(500);
+    }
+    log('dictLog', 'insert', `inserted <span class="val">${key}</span> \u2192 <span class="val">${val}</span>`);
+  }
+  renderDict(); dictAnimating = false;
+}
+
+async function dictLookup() {
+  if (dictAnimating) return;
+  const key = parseInt($('dictKeyInput').value, 10);
+  if (isNaN(key)) return;
+  dictAnimating = true;
+
+  if (dictImpl === 'hashmap') {
+    const h = dictHash(key);
+    renderDict(h); await sleep(380);
+    const ex = dictChains[h].find(e => e.key === key);
+    if (ex) {
+      renderDict(h, key, 'ht-found'); await sleep(800);
+      log('dictLog', 'lookup', `<span class="val">${key}</span> \u2192 <span class="val">${ex.val}</span>`);
+    } else {
+      log('dictLog', 'lookup', `<span class="val">${key}</span> not found`);
+    }
+  } else {
+    const {path, found} = _dictBSTFindPath(dictBSTRoot, key);
+    for (let i = 0; i < path.length; i++) {
+      const vis = new Set(path.slice(0, i + 1).map(n => n.id));
+      const cls = {}; for (const id of vis) cls[id] = 'path';
+      renderDict(-1, null, '', vis, cls); await sleep(380);
+    }
+    if (found) {
+      renderDict(-1, null, '', new Set([found.id]), {[found.id]: 'found'});
+      await sleep(900);
+      log('dictLog', 'lookup', `<span class="val">${key}</span> \u2192 <span class="val">${found.val}</span>`);
+    } else {
+      log('dictLog', 'lookup', `<span class="val">${key}</span> not found`);
+    }
+  }
+  renderDict(); dictAnimating = false;
+}
+
+async function dictDelete() {
+  if (dictAnimating) return;
+  const key = parseInt($('dictKeyInput').value, 10);
+  if (isNaN(key)) return;
+  dictAnimating = true;
+
+  if (dictImpl === 'hashmap') {
+    const h = dictHash(key);
+    renderDict(h); await sleep(380);
+    const idx = dictChains[h].findIndex(e => e.key === key);
+    if (idx !== -1) {
+      renderDict(h, key, 'ht-danger'); await sleep(500);
+      dictChains[h].splice(idx, 1);
+      renderDict(h); await sleep(180);
+      log('dictLog', 'delete', `<span class="val">${key}</span> removed`);
+    } else {
+      log('dictLog', 'delete', `<span class="val">${key}</span> not found`);
+    }
+  } else {
+    const {path, found} = _dictBSTFindPath(dictBSTRoot, key);
+    for (let i = 0; i < path.length; i++) {
+      const vis = new Set(path.slice(0, i + 1).map(n => n.id));
+      const cls = {}; for (const id of vis) cls[id] = 'path';
+      renderDict(-1, null, '', vis, cls); await sleep(380);
+    }
+    if (found) {
+      renderDict(-1, null, '', new Set([found.id]), {[found.id]: 'danger'});
+      await sleep(500);
+      dictBSTRoot = _dictBSTRemove(dictBSTRoot, key);
+      log('dictLog', 'delete', `<span class="val">${key}</span> removed`);
+    } else {
+      log('dictLog', 'delete', `<span class="val">${key}</span> not found`);
+    }
+  }
+  renderDict(); dictAnimating = false;
+}
+
+function dictClear() {
+  if (dictAnimating) return;
+  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictBSTRoot = null; dictBSTNextId = 1;
+  renderDict();
+  log('dictLog', 'clear', 'dictionary cleared');
+}
+
+// ─── Init Dictionary ───
+setDictImpl('hashmap');
+
+// ═══════════════════════════════════════════════
+//  UNION-FIND (DISJOINT SET)
+// ═══════════════════════════════════════════════
+
+const UF_MAX = 10;
+let ufImpl = 'naive';
+let ufAnimating = false;
+let ufParent = Array(UF_MAX).fill(-1);
+let ufRank   = Array(UF_MAX).fill(0);
+let ufExists = Array(UF_MAX).fill(false);
+
+const ufImplMeta = {
+  'naive': {
+    label: 'Na\u00efve (no optimizations)',
+    note: 'Union always attaches the second set\u2019s root to the first. Find walks parent pointers without compression. Trees can degenerate to a chain of height O(n).',
+    complexity: [['make-set','O(1)'],['find','O(n) worst'],['union','O(n) worst']]
+  },
+  'rank': {
+    label: 'Union by Rank',
+    note: 'The shorter tree (lower rank) is attached under the taller one. <em>Rank</em> is an upper bound on height. This keeps tree height O(log\u00a0n), improving worst-case find.',
+    complexity: [['make-set','O(1)'],['find','O(log\u00a0n)'],['union','O(log\u00a0n)']]
+  },
+  'path': {
+    label: 'Path Compression',
+    note: 'After Find traces up to the root, every node along the path is pointed directly to the root. Subsequent finds on those nodes take O(1).',
+    complexity: [['make-set','O(1)'],['find','O(log\u00a0n) amortized'],['union','O(log\u00a0n) amortized']]
+  },
+  'both': {
+    label: 'Union by Rank + Path Compression',
+    note: 'Combining both optimizations yields an inverse-Ackermann O(\u03b1(n)) amortized cost per operation \u2014 effectively O(1) for any realistic n.',
+    complexity: [['make-set','O(1)'],['find','O(\u03b1(n)) amortized'],['union','O(\u03b1(n)) amortized']]
+  }
+};
+
+sidebarData.unionfind = {
+  description: 'A disjoint-set (union-find) maintains a collection of non-overlapping sets, each represented as a tree. The root is the set\u2019s representative. <em>Find</em> locates a root; <em>Union</em> merges two sets by linking their roots.'
+};
+
+const _prevUpdateSidebar9 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'unionfind') { _prevUpdateSidebar9(panel); return; }
+  const meta = ufImplMeta[ufImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.unionfind.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  html += `<div class="sidebar-section"><h3>Rank vs Height</h3><p>Rank is an upper bound on height, not necessarily equal to it. After path compression flattens a tree, rank stays unchanged \u2014 it only increases in union-by-rank when two equal-rank roots merge.</p></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+function setUFImpl(type) {
+  ufImpl = type;
+  document.querySelectorAll('[data-uf-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.ufImpl === type);
+  });
+  $('ufImplNote').innerHTML = ufImplMeta[type].note;
+  ufParent = Array(UF_MAX).fill(-1);
+  ufRank   = Array(UF_MAX).fill(0);
+  ufExists = Array(UF_MAX).fill(false);
+  renderUF();
+  if ($('panel-unionfind').classList.contains('active')) updateSidebar('unionfind');
+}
+
+function _ufFindRoot(x) {
+  while (ufParent[x] !== x) x = ufParent[x];
+  return x;
+}
+
+function _ufFindPath(x) {
+  const path = [x];
+  while (ufParent[path[path.length - 1]] !== path[path.length - 1]) {
+    path.push(ufParent[path[path.length - 1]]);
+  }
+  return path;
+}
+
+function renderUF(hlNodes = new Set(), hlCls = '') {
+  const fc = $('ufCanvas'), ac = $('ufImplCanvas');
+  if (!ufExists.some(Boolean)) {
+    fc.innerHTML = `<div class="empty-state"><span class="ornament">\u00a7</span>Make-Set to add elements</div>`;
+    ac.innerHTML = `<div class="empty-state"><span class="ornament">\u00a7</span>Make-Set to add elements</div>`;
+    return;
+  }
+  _renderUFForest(fc, hlNodes, hlCls);
+  _renderUFArrays(ac, hlNodes);
+}
+
+function _ufBuildChildren() {
+  const ch = {};
+  for (let i = 0; i < UF_MAX; i++) if (ufExists[i]) ch[i] = [];
+  for (let i = 0; i < UF_MAX; i++) if (ufExists[i] && ufParent[i] !== i) ch[ufParent[i]].push(i);
+  return ch;
+}
+
+function _ufSubtreeWidth(node, ch) {
+  const children = ch[node];
+  if (!children || children.length === 0) return 1;
+  return children.reduce((s, c) => s + _ufSubtreeWidth(c, ch), 0);
+}
+
+function _renderUFForest(fc, hlNodes, hlCls) {
+  const ch = _ufBuildChildren();
+  const roots = [];
+  for (let i = 0; i < UF_MAX; i++) if (ufExists[i] && ufParent[i] === i) roots.push(i);
+
+  const unitW = 50, levelH = 54, r = 17, padX = 30, padY = 28;
+  const pos = {};
+  let xOff = 0;
+
+  for (const root of roots) {
+    const tw = _ufSubtreeWidth(root, ch);
+    (function layout(node, localX, depth) {
+      const children = (ch[node] || []).slice().sort((a, b) => a - b);
+      if (children.length === 0) {
+        pos[node] = {x: padX + (xOff + localX + 0.5) * unitW, y: padY + depth * levelH};
+        return 1;
+      }
+      let cx = localX;
+      const starts = [], widths = [];
+      for (const c of children) {
+        const w = _ufSubtreeWidth(c, ch);
+        starts.push(cx); widths.push(w);
+        layout(c, cx, depth + 1);
+        cx += w;
+      }
+      const l = starts[0], r2 = starts[starts.length - 1] + widths[widths.length - 1];
+      pos[node] = {x: padX + (xOff + (l + r2) / 2) * unitW, y: padY + depth * levelH};
+      return cx - localX;
+    })(root, 0, 0);
+    xOff += tw + 0.7;
+  }
+
+  let maxX = padX * 2, maxY = padY + levelH;
+  for (const {x, y} of Object.values(pos)) { maxX = Math.max(maxX, x + r + padX); maxY = Math.max(maxY, y + r + padY); }
+  const W = Math.max(maxX, 200), H = Math.max(maxY, 120);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">`;
+
+  // Edges
+  for (let i = 0; i < UF_MAX; i++) {
+    if (ufExists[i] && ufParent[i] !== i && pos[i] && pos[ufParent[i]]) {
+      const {x: x1, y: y1} = pos[ufParent[i]];
+      const {x: x2, y: y2} = pos[i];
+      svg += `<line class="edge-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    }
+  }
+
+  // Nodes
+  for (let i = 0; i < UF_MAX; i++) {
+    if (!ufExists[i] || !pos[i]) continue;
+    const {x, y} = pos[i];
+    const isRoot = ufParent[i] === i;
+    const isHL   = hlNodes.has(i);
+    let cls = 'node-circle';
+    if (isRoot) cls += ' uf-root-node';
+    if (isHL)   cls += ' ' + hlCls;
+    svg += `<circle class="${cls}" cx="${x}" cy="${y}" r="${r}"/>`;
+    svg += `<text class="node-text" x="${x}" y="${y}">${i}</text>`;
+    if (isRoot && ufRank[i] > 0) {
+      svg += `<text class="uf-rank-lbl" x="${x + r + 4}" y="${y + 4}">r=${ufRank[i]}</text>`;
+    }
+  }
+  svg += '</svg>';
+  fc.innerHTML = svg;
+}
+
+function _renderUFArrays(ac, hlNodes) {
+  const existing = [];
+  for (let i = 0; i < UF_MAX; i++) if (ufExists[i]) existing.push(i);
+
+  let html = '<div class="uf-array-view">';
+
+  // Index header
+  html += '<div class="uf-arr-label">index</div><div class="uf-arr-row">';
+  for (const i of existing) html += `<div class="uf-cell uf-cell-hdr"><span>${i}</span></div>`;
+  html += '</div>';
+
+  // parent[]
+  html += '<div class="uf-arr-label">parent[ ]</div><div class="uf-arr-row">';
+  for (const i of existing) {
+    const isRoot = ufParent[i] === i;
+    const isHL   = hlNodes.has(i);
+    let cls = 'uf-cell';
+    if (isRoot) cls += ' uf-cell-root';
+    if (isHL)   cls += ' uf-cell-hl';
+    html += `<div class="${cls}"><span>${ufParent[i]}</span></div>`;
+  }
+  html += '</div>';
+
+  // rank[]
+  html += '<div class="uf-arr-label">rank[ ]</div><div class="uf-arr-row">';
+  for (const i of existing) {
+    const isRoot = ufParent[i] === i;
+    html += `<div class="uf-cell${isRoot ? ' uf-cell-root' : ''}"><span>${ufRank[i]}</span></div>`;
+  }
+  html += '</div>';
+
+  // Stats
+  const roots = existing.filter(i => ufParent[i] === i);
+  html += `<div class="impl-info-row"><span class="impl-stat">elements\u00a0${existing.length}</span><span class="impl-stat">sets\u00a0${roots.length}</span></div>`;
+  html += '</div>';
+  ac.innerHTML = html;
+}
+
+async function ufMakeSet() {
+  if (ufAnimating) return;
+  const x = parseInt($('ufInput').value, 10);
+  if (isNaN(x) || x < 0 || x >= UF_MAX) {
+    log('ufLog', 'make-set', `element must be 0\u2013${UF_MAX - 1}`); return;
+  }
+  if (ufExists[x]) {
+    log('ufLog', 'make-set', `<span class="val">${x}</span> already exists`); return;
+  }
+  $('ufInput').value = '';
+  ufExists[x] = true; ufParent[x] = x; ufRank[x] = 0;
+  renderUF(new Set([x]), 'uf-new-node');
+  await sleep(400);
+  renderUF();
+  log('ufLog', 'make-set', `created singleton set {<span class="val">${x}</span>}`);
+}
+
+async function ufFind() {
+  if (ufAnimating) return;
+  const x = parseInt($('ufInput').value, 10);
+  if (isNaN(x) || x < 0 || x >= UF_MAX || !ufExists[x]) {
+    log('ufLog', 'find', `element ${isNaN(x) ? '?' : x} does not exist`); return;
+  }
+  ufAnimating = true;
+
+  const path = _ufFindPath(x);
+
+  // Animate traversal up to root
+  for (let i = 0; i < path.length; i++) {
+    renderUF(new Set(path.slice(0, i + 1)), 'bubble-active');
+    await sleep(400);
+  }
+
+  const root = path[path.length - 1];
+  const useCompress = ufImpl === 'path' || ufImpl === 'both';
+
+  if (useCompress && path.length > 2) {
+    // Apply path compression
+    for (let i = 0; i < path.length - 1; i++) ufParent[path[i]] = root;
+    renderUF(new Set(path), 'uf-compressed');
+    await sleep(700);
+    log('ufLog', 'find', `find(<span class="val">${x}</span>) = <span class="val">${root}</span> \u00b7 compressed ${path.length - 1} node${path.length > 2 ? 's' : ''} \u2192 root`);
+  } else {
+    log('ufLog', 'find', `find(<span class="val">${x}</span>) = <span class="val">${root}</span> \u00b7 depth\u00a0${path.length - 1}`);
+  }
+
+  renderUF(new Set([root]), 'found');
+  await sleep(500);
+  renderUF();
+  ufAnimating = false;
+}
+
+async function ufUnion() {
+  if (ufAnimating) return;
+  const x = parseInt($('ufXInput').value, 10);
+  const y = parseInt($('ufYInput').value, 10);
+  if (isNaN(x) || isNaN(y) || x < 0 || x >= UF_MAX || y < 0 || y >= UF_MAX) {
+    log('ufLog', 'union', 'enter valid elements x and y (0\u2013' + (UF_MAX - 1) + ')'); return;
+  }
+  if (!ufExists[x] || !ufExists[y]) {
+    log('ufLog', 'union', `both elements must exist \u2014 use Make-Set first`); return;
+  }
+  $('ufXInput').value = ''; $('ufYInput').value = '';
+  ufAnimating = true;
+
+  const useCompress = ufImpl === 'path' || ufImpl === 'both';
+  const useRank     = ufImpl === 'rank' || ufImpl === 'both';
+
+  // Highlight starting nodes
+  renderUF(new Set([x, y]), 'bubble-active'); await sleep(400);
+
+  // Find paths to roots (before any compression)
+  const pathX = _ufFindPath(x);
+  const pathY = _ufFindPath(y);
+
+  // Animate traversal of both paths simultaneously
+  for (let i = 0; i < Math.max(pathX.length, pathY.length); i++) {
+    const vis = new Set();
+    if (i < pathX.length) pathX.slice(0, i + 1).forEach(n => vis.add(n));
+    if (i < pathY.length) pathY.slice(0, i + 1).forEach(n => vis.add(n));
+    renderUF(vis, 'bubble-active'); await sleep(350);
+  }
+
+  const rootX = pathX[pathX.length - 1];
+  const rootY = pathY[pathY.length - 1];
+
+  // Apply path compression on both paths
+  if (useCompress) {
+    for (const n of pathX) ufParent[n] = rootX;
+    for (const n of pathY) ufParent[n] = rootY;
+  }
+
+  if (rootX === rootY) {
+    renderUF(new Set([rootX]), 'found'); await sleep(500);
+    renderUF();
+    log('ufLog', 'union', `<span class="val">${x}</span> and <span class="val">${y}</span> already in the same set (root\u00a0${rootX})`);
+    ufAnimating = false; return;
+  }
+
+  // Highlight both roots
+  renderUF(new Set([rootX, rootY]), 'bubble-active'); await sleep(500);
+
+  // Link roots
+  let newRoot, absorbed;
+  if (useRank) {
+    if (ufRank[rootX] < ufRank[rootY])      { ufParent[rootX] = rootY; newRoot = rootY; absorbed = rootX; }
+    else if (ufRank[rootX] > ufRank[rootY]) { ufParent[rootY] = rootX; newRoot = rootX; absorbed = rootY; }
+    else                                    { ufParent[rootY] = rootX; ufRank[rootX]++; newRoot = rootX; absorbed = rootY; }
+  } else {
+    ufParent[rootY] = rootX; newRoot = rootX; absorbed = rootY;
+  }
+
+  renderUF(new Set([newRoot]), 'found'); await sleep(600);
+  renderUF();
+  const rankNote = useRank ? ` \u00b7 rank-based (rank[${newRoot}]\u00a0=\u00a0${ufRank[newRoot]})` : '';
+  log('ufLog', 'union', `merged sets of <span class="val">${x}</span> & <span class="val">${y}</span> \u00b7 root ${absorbed} \u2192 ${newRoot}${rankNote}`);
+  ufAnimating = false;
+}
+
+function ufClear() {
+  if (ufAnimating) return;
+  ufParent = Array(UF_MAX).fill(-1);
+  ufRank   = Array(UF_MAX).fill(0);
+  ufExists = Array(UF_MAX).fill(false);
+  renderUF();
+  log('ufLog', 'clear', 'all sets cleared');
+}
+
+// ─── Init Union-Find ───
+setUFImpl('naive');
+
+// ═══════════════════════════════════════════════
+//  GRAPH — DATA & METADATA
+// ═══════════════════════════════════════════════
+let graphNodes     = [];   // [{ id }]
+let graphEdges     = [];   // [{ from, to }]
+let graphDirected  = true;
+let graphNextId    = 1;
+let graphImpl      = 'adjacency-list';
+let graphAnimating = false;
+
+const GRAPH_MAX_NODES = 12;
+const GRAPH_R         = 19; // node circle radius (px)
+
+const graphImplMeta = {
+  'adjacency-list': {
+    label: 'Adjacency List',
+    note: 'Each vertex stores a list of its neighbours. Space: O(V\u00a0+\u00a0E) — optimal for sparse graphs.',
+    complexity: [['add node','O(1)'],['add edge','O(1)'],['BFS / DFS','O(V\u00a0+\u00a0E)'],['topo sort','O(V\u00a0+\u00a0E)']]
+  },
+  'adjacency-matrix': {
+    label: 'Adjacency Matrix',
+    note: 'An n\u00d7n boolean grid. O(1) edge lookup, but O(V\u00b2) space \u2014 costly for sparse graphs.',
+    complexity: [['add node','O(V)'],['add edge','O(1)'],['edge lookup','O(1)'],['BFS / DFS','O(V\u00b2)'],['topo sort','O(V\u00b2)']]
+  }
+};
+
+sidebarData.graph = {
+  description: 'A graph G\u00a0=\u00a0(V,\u00a0E) pairs a set of vertices V with edges E. Directed graphs (digraphs) have one-way edges; undirected graphs are bidirectional. Graphs model dependency chains, road networks, social connections, and more.'
+};
+
+const _prevUpdateSidebar10 = updateSidebar;
+updateSidebar = function(panel) {
+  if (panel !== 'graph') { _prevUpdateSidebar10(panel); return; }
+  const meta = graphImplMeta[graphImpl];
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.graph.description}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
+  html += `<table class="complexity-table">`;
+  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += `</table></div>`;
+  $('sidebarContent').innerHTML = html;
+};
+
+// ═══════════════════════════════════════════════
+//  GRAPH — IMPL SWITCHER
+// ═══════════════════════════════════════════════
+function setGraphImpl(type) {
+  graphImpl = type;
+  document.querySelectorAll('[data-graph-impl]').forEach(b => {
+    b.classList.toggle('active', b.dataset.graphImpl === type);
+  });
+  $('graphImplNote').innerHTML = graphImplMeta[type].note;
+  if ($('panel-graph').classList.contains('active')) updateSidebar('graph');
+  renderGraph();
+}
+
+function setGraphDirected(directed) {
+  graphDirected = directed;
+  document.querySelectorAll('[data-graph-dir]').forEach(b => {
+    b.classList.toggle('active', (b.dataset.graphDir === 'directed') === directed);
+  });
+  renderGraph();
+}
+
+// ═══════════════════════════════════════════════
+//  GRAPH — CORE ALGORITHMS
+// ═══════════════════════════════════════════════
+function _buildGraphAdj() {
+  const adj = new Map();
+  graphNodes.forEach(n => adj.set(n.id, []));
+  graphEdges.forEach(({ from, to }) => {
+    if (adj.has(from)) adj.get(from).push(to);
+    if (!graphDirected && adj.has(to)) adj.get(to).push(from);
+  });
+  return adj;
+}
+
+function _graphBFSSteps(srcId) {
+  const adj = _buildGraphAdj();
+  const visited = new Set([srcId]);
+  const queue   = [srcId];
+  const steps   = [{ current: srcId, visited: new Set(visited) }];
+  while (queue.length) {
+    const curr = queue.shift();
+    for (const nbr of (adj.get(curr) || [])) {
+      if (!visited.has(nbr)) {
+        visited.add(nbr);
+        queue.push(nbr);
+        steps.push({ current: nbr, visited: new Set(visited) });
+      }
+    }
+  }
+  return steps;
+}
+
+function _graphDFSSteps(srcId) {
+  const adj     = _buildGraphAdj();
+  const visited = new Set();
+  const steps   = [];
+  function dfs(v) {
+    visited.add(v);
+    steps.push({ current: v, visited: new Set(visited) });
+    for (const nbr of (adj.get(v) || [])) {
+      if (!visited.has(nbr)) dfs(nbr);
+    }
+  }
+  dfs(srcId);
+  return steps;
+}
+
+function _graphTopoSteps() {
+  // Kahn's algorithm — directed graphs only
+  const inDeg = new Map();
+  graphNodes.forEach(n => inDeg.set(n.id, 0));
+  graphEdges.forEach(e => inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1));
+
+  const queue = [];
+  inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
+  queue.sort((a, b) => a - b);
+
+  const order = [], steps = [];
+  while (queue.length) {
+    const curr = queue.shift();
+    order.push(curr);
+    steps.push({ current: curr, processed: new Set(order) });
+    graphEdges.filter(e => e.from === curr).forEach(e => {
+      const nd = inDeg.get(e.to) - 1;
+      inDeg.set(e.to, nd);
+      if (nd === 0) { queue.push(e.to); queue.sort((a, b) => a - b); }
+    });
+  }
+  return { steps, order, hasCycle: order.length < graphNodes.length };
+}
+
+// ═══════════════════════════════════════════════
+//  GRAPH — LAYOUT
+// ═══════════════════════════════════════════════
+function _graphLayout(W, H) {
+  const n = graphNodes.length;
+  const pos = new Map();
+  if (n === 0) return pos;
+  const cx = W / 2, cy = H / 2;
+  const r  = n === 1 ? 0 : Math.min(cx - GRAPH_R - 10, cy - GRAPH_R - 10) * 0.82;
+  graphNodes.forEach((node, i) => {
+    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+    pos.set(node.id, { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+  });
+  return pos;
+}
+
+// ═══════════════════════════════════════════════
+//  GRAPH — RENDER
+// ═══════════════════════════════════════════════
+const GRAPH_EMPTY = `<div class="empty-state"><span class="ornament">\u00a7</span>Add a node to begin</div>`;
+
+function renderGraph(hlSet, visitedSet) {
+  const c  = $('graphCanvas');
+  const ac = $('graphImplCanvas');
+  if (!c) return;
+  if (graphNodes.length === 0) { c.innerHTML = GRAPH_EMPTY; ac.innerHTML = GRAPH_EMPTY; return; }
+  const hl  = hlSet      || new Set();
+  const vis = visitedSet || new Set();
+  _renderGraphSVG(c, hl, vis);
+  if (graphImpl === 'adjacency-list') _renderGraphAdjList(ac, hl, vis);
+  else                                _renderGraphAdjMatrix(ac, hl, vis);
+}
+
+function _renderGraphSVG(c, hlSet, visitedSet) {
+  const W = 540, H = 320;
+  const pos = _graphLayout(W, H);
+  const r   = GRAPH_R;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">`;
+
+  // Arrowhead marker for directed edges
+  if (graphDirected) {
+    svg += `<defs><marker id="garrow" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
+           `<path d="M0,0 L10,4 L0,8 z" fill="var(--ink)" opacity="0.72"/></marker></defs>`;
+  }
+
+  // Edges
+  for (const { from, to } of graphEdges) {
+    if (from === to) continue;
+    const p1 = pos.get(from), p2 = pos.get(to);
+    if (!p1 || !p2) continue;
+
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) continue;
+    const ux = dx / len, uy = dy / len;
+
+    // Offset parallel directed edges slightly so A→B and B→A don't overlap
+    const hasReverse = graphDirected && graphEdges.some(e => e.from === to && e.to === from);
+    const offPx = hasReverse ? -uy * 5 : 0;
+    const offPy = hasReverse ?  ux * 5 : 0;
+
+    const x1 = p1.x + ux * r       + offPx;
+    const y1 = p1.y + uy * r       + offPy;
+    const x2 = p2.x - ux * (r + (graphDirected ? 10 : 0)) + offPx;
+    const y2 = p2.y - uy * (r + (graphDirected ? 10 : 0)) + offPy;
+
+    const bothVisited = visitedSet.has(from) && visitedSet.has(to);
+    const edgeCls = 'edge-line' + (bothVisited ? ' graph-edge-visited' : '');
+    const marker  = graphDirected ? ' marker-end="url(#garrow)"' : '';
+    svg += `<line class="${edgeCls}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"${marker}/>`;
+  }
+
+  // Nodes
+  for (const node of graphNodes) {
+    const p = pos.get(node.id);
+    if (!p) continue;
+    const isCurrent = hlSet.has(node.id);
+    const isVisited = visitedSet.has(node.id);
+    const cls = 'node-circle' + (isCurrent ? ' highlight' : isVisited ? ' visited' : '');
+    svg += `<circle class="${cls}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/>`;
+    svg += `<text class="node-text" x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}">${node.id}</text>`;
+  }
+
+  svg += '</svg>';
+  c.innerHTML = svg;
+}
+
+function _renderGraphAdjList(c, hlSet, visitedSet) {
+  const adj = _buildGraphAdj();
+  let h = `<div class="graph-adj-view"><div class="impl-section-label">Adjacency List \u2014 ${graphDirected ? 'directed' : 'undirected'}</div>`;
+  for (const node of graphNodes) {
+    const nbrs    = adj.get(node.id) || [];
+    const isCurr  = hlSet.has(node.id);
+    const isVis   = visitedSet.has(node.id);
+    const rowCls  = 'graph-adj-row' + (isCurr ? ' graph-adj-current' : isVis ? ' graph-adj-visited' : '');
+    const nbrHtml = nbrs.length
+      ? nbrs.map(n => `<span class="graph-adj-nbr">${n}</span>`).join('<span class="graph-adj-arrow"> \u2192 </span>')
+      : `<span class="graph-adj-empty">\u2205</span>`;
+    h += `<div class="${rowCls}"><span class="graph-adj-node">${node.id}</span>` +
+         `<span class="graph-adj-arrow"> \u2192 </span>${nbrHtml}</div>`;
+  }
+  h += `<div class="impl-info-row"><span class="impl-stat">V\u00a0=\u00a0${graphNodes.length}</span>` +
+       `<span class="impl-stat">E\u00a0=\u00a0${graphEdges.length}</span></div></div>`;
+  c.innerHTML = h;
+}
+
+function _renderGraphAdjMatrix(c, hlSet, visitedSet) {
+  const ids     = graphNodes.map(n => n.id);
+  const n       = ids.length;
+  const idx     = new Map(ids.map((id, i) => [id, i]));
+  const mat     = Array.from({ length: n }, () => Array(n).fill(0));
+  for (const { from, to } of graphEdges) {
+    const ri = idx.get(from), ci = idx.get(to);
+    if (ri !== undefined && ci !== undefined) {
+      mat[ri][ci] = 1;
+      if (!graphDirected) mat[ci][ri] = 1;
+    }
+  }
+
+  let h = `<div class="graph-adj-view"><div class="impl-section-label">Adjacency Matrix \u2014 ${graphDirected ? 'directed' : 'undirected'}</div>`;
+  h += '<table class="graph-matrix-table"><thead><tr><th></th>';
+  ids.forEach(id => {
+    const cls = hlSet.has(id) ? ' class="gmat-hl"' : visitedSet.has(id) ? ' class="gmat-vis"' : '';
+    h += `<th${cls}>${id}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+  for (let i = 0; i < n; i++) {
+    const rid = ids[i];
+    const rCls = hlSet.has(rid) ? ' class="gmat-hl"' : visitedSet.has(rid) ? ' class="gmat-vis"' : '';
+    h += `<tr><th${rCls}>${rid}</th>`;
+    for (let j = 0; j < n; j++) {
+      h += `<td class="${mat[i][j] ? 'gmat-one' : 'gmat-zero'}">${mat[i][j]}</td>`;
+    }
+    h += '</tr>';
+  }
+  h += `</tbody></table>`;
+  h += `<div class="impl-info-row"><span class="impl-stat">V\u00a0=\u00a0${n}</span>` +
+       `<span class="impl-stat">E\u00a0=\u00a0${graphEdges.length}</span></div></div>`;
+  c.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════
+//  GRAPH — ANIMATION HELPERS
+// ═══════════════════════════════════════════════
+async function _animateGraphSteps(steps) {
+  for (const { current, visited, processed } of steps) {
+    const vis = visited || processed || new Set();
+    renderGraph(new Set([current]), vis);
+    await sleep(480);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  GRAPH — OPERATIONS
+// ═══════════════════════════════════════════════
+function graphAddNode() {
+  if (graphAnimating) return;
+  if (graphNodes.length >= GRAPH_MAX_NODES) {
+    log('graphLog', 'add-node', `max ${GRAPH_MAX_NODES} nodes reached`); return;
+  }
+  const id = graphNextId++;
+  graphNodes.push({ id });
+  renderGraph();
+  log('graphLog', 'add-node', `node <span class="val">${id}</span> added`);
+}
+
+function graphAddEdge() {
+  if (graphAnimating) return;
+  const from = parseInt($('graphFromInput').value, 10);
+  const to   = parseInt($('graphToInput').value, 10);
+  $('graphFromInput').value = ''; $('graphToInput').value = '';
+  if (isNaN(from) || isNaN(to)) { log('graphLog', 'add-edge', 'enter valid From and To node IDs'); return; }
+  if (!graphNodes.find(n => n.id === from)) { log('graphLog', 'add-edge', `node <span class="val">${from}</span> does not exist`); return; }
+  if (!graphNodes.find(n => n.id === to))   { log('graphLog', 'add-edge', `node <span class="val">${to}</span> does not exist`); return; }
+  if (graphEdges.find(e => e.from === from && e.to === to)) {
+    log('graphLog', 'add-edge', `edge <span class="val">${from}\u00a0\u2192\u00a0${to}</span> already exists`); return;
+  }
+  graphEdges.push({ from, to });
+  renderGraph();
+  const arrow = graphDirected ? '\u00a0\u2192\u00a0' : '\u00a0\u2014\u00a0';
+  log('graphLog', 'add-edge', `edge <span class="val">${from}${arrow}${to}</span> added`);
+}
+
+async function graphBFS() {
+  if (graphAnimating) return;
+  const src = parseInt($('graphSrcInput').value, 10);
+  if (isNaN(src) || !graphNodes.find(n => n.id === src)) {
+    log('graphLog', 'BFS', 'enter a valid source node ID'); return;
+  }
+  graphAnimating = true;
+  const steps = _graphBFSSteps(src);
+  await _animateGraphSteps(steps);
+  const order = steps.map(s => s.current);
+  renderGraph(new Set(), steps[steps.length - 1].visited);
+  await sleep(300);
+  renderGraph();
+  log('graphLog', 'BFS', `from <span class="val">${src}</span>\u00a0\u2192\u00a0` +
+    order.map(id => `<span class="val">${id}</span>`).join(' \u2192 '));
+  graphAnimating = false;
+}
+
+async function graphDFS() {
+  if (graphAnimating) return;
+  const src = parseInt($('graphSrcInput').value, 10);
+  if (isNaN(src) || !graphNodes.find(n => n.id === src)) {
+    log('graphLog', 'DFS', 'enter a valid source node ID'); return;
+  }
+  graphAnimating = true;
+  const steps = _graphDFSSteps(src);
+  await _animateGraphSteps(steps);
+  const order = steps.map(s => s.current);
+  renderGraph(new Set(), steps[steps.length - 1].visited);
+  await sleep(300);
+  renderGraph();
+  log('graphLog', 'DFS', `from <span class="val">${src}</span>\u00a0\u2192\u00a0` +
+    order.map(id => `<span class="val">${id}</span>`).join(' \u2192 '));
+  graphAnimating = false;
+}
+
+async function graphTopoSort() {
+  if (graphAnimating) return;
+  if (!graphDirected) { log('graphLog', 'topo-sort', 'topological sort requires a directed graph'); return; }
+  if (graphNodes.length === 0) { log('graphLog', 'topo-sort', 'graph is empty'); return; }
+  graphAnimating = true;
+
+  const { steps, order, hasCycle } = _graphTopoSteps();
+
+  for (const { current, processed } of steps) {
+    renderGraph(new Set([current]), processed);
+    await sleep(500);
+  }
+  renderGraph(new Set(), order.length ? new Set(order) : new Set());
+  await sleep(350);
+  renderGraph();
+
+  if (hasCycle) {
+    log('graphLog', 'topo-sort', 'cycle detected \u2014 topological order does not exist');
+  } else {
+    log('graphLog', 'topo-sort',
+      'order:\u00a0' + order.map(id => `<span class="val">${id}</span>`).join(' \u2192 '));
+  }
+  graphAnimating = false;
+}
+
+function graphClear() {
+  if (graphAnimating) return;
+  graphNodes = []; graphEdges = []; graphNextId = 1;
+  renderGraph();
+  log('graphLog', 'clear', 'graph cleared');
+}
+
+// ─── Init Graph ───
+setGraphImpl('adjacency-list');
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — NAVIGATION
+// ═══════════════════════════════════════════════
+
+document.getElementById('algoNavStrip').addEventListener('click', e => {
+  const btn = e.target.closest('[data-algo]');
+  if (!btn) return;
+  document.querySelectorAll('[data-algo]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const key = btn.dataset.algo;
+  document.querySelectorAll('#section-algorithms .panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('algo-panel-' + key).classList.add('active');
+  _updateAlgoSidebar(key);
+});
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — SIDEBAR
+// ═══════════════════════════════════════════════
+
+const _algoSidebarInfo = {
+  'selection-sort': {
+    desc: 'Finds the minimum from the unsorted portion and swaps it to the front — repeated n−1 times. Simple but always Θ(n²) comparisons.',
+    rows: [['comparisons','Θ(n²)'],['swaps','O(n)'],['space','O(1)'],['stable','No']],
+    note: 'Minimum number of swaps among O(n²) sorts. Best and worst cases are identical — n(n−1)/2 comparisons always.'
+  },
+  'insertion-sort': {
+    desc: 'Grows a sorted prefix one element at a time by inserting each new element into its correct position via shifting.',
+    rows: [['best','O(n)'],['average','O(n²)'],['worst','O(n²)'],['space','O(1)'],['stable','Yes']],
+    note: 'Best case O(n) on nearly-sorted input. Preferred over selection sort when the array is partially ordered.'
+  },
+  'merge-sort': {
+    desc: 'Recursively splits the array in half, sorts each half, then merges them. Guaranteed O(n log n) in all cases.',
+    rows: [['all cases','O(n log n)'],['space','O(n)'],['stable','Yes']],
+    note: 'Requires O(n) auxiliary space for the merge buffer. Excellent for linked lists and external sorting.'
+  },
+  'tree-traversals': {
+    desc: 'Four ways to visit every node in a BST. The visit order depends on the traversal type used.',
+    rows: [['all traversals','O(n)'],['recursive space','O(h)'],['level-order space','O(w)']],
+    note: 'In-order on a BST always yields a sorted sequence. h = tree height, w = max width of any level.'
+  }
+};
+
+function _updateAlgoSidebar(key) {
+  const d = _algoSidebarInfo[key];
+  if (!d) return;
+  let html = `<div class="sidebar-section"><h3>About</h3><p>${d.desc}</p></div>`;
+  html += `<div class="sidebar-section"><h3>Complexity</h3><table class="complexity-table">`;
+  d.rows.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
+  html += '</table></div>';
+  if (d.note) html += `<div class="sidebar-section"><h3>Note</h3><p>${d.note}</p></div>`;
+  document.getElementById('algoSidebar').innerHTML = html;
+}
+
+_updateAlgoSidebar('selection-sort');
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — SORT STATE & PSEUDOCODE
+// ═══════════════════════════════════════════════
+
+const _sortStates = {
+  sel: { frames: [], idx: 0, running: false },
+  ins: { frames: [], idx: 0, running: false },
+  mrg: { frames: [], idx: 0, running: false }
+};
+
+const _sortPseudo = {
+  sel: [
+    'for i \u2190 0 to n\u22122:',
+    '    minIdx \u2190 i',
+    '    for j \u2190 i+1 to n\u22121:',
+    '        if arr[j] < arr[minIdx]:',
+    '            minIdx \u2190 j',
+    '    swap(arr[i], arr[minIdx])'
+  ],
+  ins: [
+    'for i \u2190 1 to n\u22121:',
+    '    key \u2190 arr[i]',
+    '    j \u2190 i \u2212 1',
+    '    while j \u2265 0 and arr[j] > key:',
+    '        arr[j+1] \u2190 arr[j]',
+    '        j \u2190 j \u2212 1',
+    '    arr[j+1] \u2190 key'
+  ],
+  mrg: [
+    'mergeSort(l, r):',
+    '    if l \u2265 r: return',
+    '    m \u2190 \u230a(l+r)/2\u230b',
+    '    mergeSort(l, m)',
+    '    mergeSort(m+1, r)',
+    '    merge(l, m, r)',
+    '',
+    'merge(l, m, r):',
+    '    L \u2190 arr[l..m],  R \u2190 arr[m+1..r]',
+    '    place smaller of L[i], R[j] \u2192 arr[k++]',
+    '    copy remaining elements'
+  ]
+};
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — FRAME GENERATORS
+// ═══════════════════════════════════════════════
+
+function _selFrames(arr) {
+  const a = [...arr], n = a.length;
+  const frames = [], sorted = new Set();
+  const push = ex => frames.push({
+    a: [...a], sorted: new Set(sorted),
+    compare: [], swap: [], minIdx: null,
+    label: '', pLine: -1, done: false, ...ex
+  });
+
+  push({ label: 'Initial array', pLine: 0 });
+  for (let i = 0; i < n - 1; i++) {
+    let minIdx = i;
+    push({ compare: [i], minIdx: i, label: `i=${i}: search for min in arr[${i}..${n-1}]`, pLine: 1 });
+    for (let j = i + 1; j < n; j++) {
+      push({ compare: [j], minIdx, label: `Compare arr[${j}]=${a[j]} with min arr[${minIdx}]=${a[minIdx]}`, pLine: 3 });
+      if (a[j] < a[minIdx]) {
+        minIdx = j;
+        push({ compare: [minIdx], minIdx, label: `New min: arr[${minIdx}]=${a[minIdx]}`, pLine: 4 });
+      }
+    }
+    if (minIdx !== i) {
+      push({ swap: [i, minIdx], label: `Swap arr[${i}]=${a[i]} \u2194 arr[${minIdx}]=${a[minIdx]}`, pLine: 5 });
+      [a[i], a[minIdx]] = [a[minIdx], a[i]];
+      push({ swap: [i, minIdx], label: 'Swapped', pLine: 5 });
+    } else {
+      push({ compare: [i], minIdx: i, label: `arr[${i}]=${a[i]} is already minimum \u2014 no swap`, pLine: 5 });
+    }
+    sorted.add(i);
+    push({ label: `arr[${i}]=${a[i]} is in its final position`, pLine: 0 });
+  }
+  sorted.add(n - 1);
+  push({ label: 'Array sorted!', done: true });
+  return frames;
+}
+
+function _insFrames(arr) {
+  const a = [...arr], n = a.length;
+  const frames = [], sorted = new Set([0]);
+  const push = ex => frames.push({
+    a: [...a], sorted: new Set(sorted),
+    compare: [], shift: [], insertAt: null,
+    label: '', pLine: -1, done: false, ...ex
+  });
+
+  push({ label: 'arr[0] is trivially sorted (single element)', pLine: 0 });
+  for (let i = 1; i < n; i++) {
+    const key = a[i];
+    push({ compare: [i], label: `key \u2190 arr[${i}] = ${key}`, pLine: 1 });
+    let j = i - 1;
+    while (j >= 0 && a[j] > key) {
+      push({ compare: [j], label: `arr[${j}]=${a[j]} > key=${key}: shift right`, pLine: 3 });
+      a[j + 1] = a[j];
+      push({ shift: [j + 1], label: `arr[${j+1}] \u2190 arr[${j}] (shifted)`, pLine: 4 });
+      j--;
+    }
+    a[j + 1] = key;
+    sorted.add(i);
+    push({ insertAt: j + 1, label: `key=${key} placed at arr[${j+1}]`, pLine: 6 });
+  }
+  push({ label: 'Array sorted!', done: true });
+  return frames;
+}
+
+function _mrgFrames(originalArr) {
+  const a = [...originalArr], n = a.length;
+  const frames = [];
+  const push = ex => frames.push({
+    a: [...a], mergeZone: null,
+    leftZone: null, rightZone: null, placing: null,
+    label: '', pLine: -1, done: false, ...ex
+  });
+
+  push({ label: 'Initial array \u2014 begin merge sort', pLine: 0 });
+
+  function ms(l, r) {
+    if (l >= r) return;
+    const m = Math.floor((l + r) / 2);
+    push({ mergeZone: [l, r], label: `Split arr[${l}..${r}] at mid=${m}`, pLine: 2 });
+    ms(l, m);
+    ms(m + 1, r);
+
+    push({ mergeZone: [l, r], leftZone: [l, m], rightZone: [m+1, r],
+           label: `Merge arr[${l}..${m}] and arr[${m+1}..${r}]`, pLine: 7 });
+
+    const L = a.slice(l, m + 1), R = a.slice(m + 1, r + 1);
+    let li = 0, ri = 0, k = l;
+
+    while (li < L.length && ri < R.length) {
+      if (L[li] <= R[ri]) {
+        a[k] = L[li++];
+        push({ mergeZone: [l, r], placing: k,
+               label: `L[${li-1}]=${a[k]} \u2264 R[${ri}]=${R[ri]}: place ${a[k]} at arr[${k}]`, pLine: 9 });
+      } else {
+        a[k] = R[ri++];
+        push({ mergeZone: [l, r], placing: k,
+               label: `R[${ri-1}]=${a[k]} < L[${li}]=${L[li]}: place ${a[k]} at arr[${k}]`, pLine: 9 });
+      }
+      k++;
+    }
+    while (li < L.length) {
+      a[k] = L[li++];
+      push({ mergeZone: [l, r], placing: k, label: `Copy remaining left: arr[${k}]=${a[k]}`, pLine: 10 });
+      k++;
+    }
+    while (ri < R.length) {
+      a[k] = R[ri++];
+      push({ mergeZone: [l, r], placing: k, label: `Copy remaining right: arr[${k}]=${a[k]}`, pLine: 10 });
+      k++;
+    }
+    push({ mergeZone: [l, r], label: `arr[${l}..${r}] merged and sorted`, pLine: 7 });
+  }
+
+  ms(0, n - 1);
+  push({ label: 'Array sorted!', done: true });
+  return frames;
+}
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — SORT RENDERER
+// ═══════════════════════════════════════════════
+
+function _renderSortFrame(key, frame) {
+  if (!frame) return;
+  const canvas = document.getElementById(`sortCanvas-${key}`);
+  const pseudoEl = document.getElementById(`sortPseudo-${key}`);
+  const infoEl = document.getElementById(`sortInfo-${key}`);
+  if (!canvas) return;
+
+  const { a, sorted, compare, swap, shift, insertAt, placing,
+          mergeZone, leftZone, rightZone, label, pLine, done } = frame;
+  const n = a.length;
+  const maxVal = Math.max(...a, 1);
+
+  // Bar chart
+  let barsHtml = '<div class="sort-bars-wrap"><div class="sort-bars-area">';
+  let idxHtml = '</div><div class="sort-idx-area">';
+
+  for (let i = 0; i < n; i++) {
+    const hpct = Math.round((a[i] / maxVal) * 80) + 12;
+    let cls = '';
+
+    if (done) {
+      cls = 'sorted';
+    } else {
+      if (sorted && sorted.has(i)) cls = 'sorted';
+
+      // Merge sort zones (applied before specific overlays)
+      if (mergeZone && i >= mergeZone[0] && i <= mergeZone[1]) {
+        if (!cls) cls = 'merge-zone';
+        if (leftZone && i >= leftZone[0] && i <= leftZone[1]) cls = 'merge-left';
+        if (rightZone && i >= rightZone[0] && i <= rightZone[1]) cls = 'merge-right';
+        if (placing === i) cls = 'placing';
+      }
+
+      // Selection / insertion sort overlays (highest priority)
+      if (compare && compare.includes(i)) cls = 'compare';
+      if (swap && swap.includes(i)) cls = 'swap';
+      if (shift && shift.includes(i)) cls = 'swap';
+      if (insertAt === i) cls = 'placing';
+
+      // Selection sort: mark confirmed minimum distinctly when not also in compare
+      if (frame.minIdx !== null && frame.minIdx !== undefined &&
+          i === frame.minIdx && !(compare && compare.includes(i))) {
+        cls = 'min-idx';
+      }
+    }
+
+    barsHtml += `<div class="sort-bar ${cls}" style="height:${hpct}%"><span class="sort-bar-val">${a[i]}</span></div>`;
+    idxHtml += `<div class="sort-bar-idx">${i}</div>`;
+  }
+
+  canvas.innerHTML = barsHtml + idxHtml + '</div>';
+
+  // Pseudocode
+  _renderPseudoPane(key, pLine);
+
+  if (infoEl) infoEl.textContent = label;
+}
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — SORT CONTROLS
+// ═══════════════════════════════════════════════
+
+function sortGenerate(key) {
+  const st = _sortStates[key];
+  if (st.running) return;
+  const arr = Array.from({ length: 12 }, () => Math.floor(Math.random() * 88) + 8);
+  st.frames = key === 'sel' ? _selFrames(arr) : key === 'ins' ? _insFrames(arr) : _mrgFrames(arr);
+  st.idx = 0;
+  st.running = false;
+  _renderSortFrame(key, st.frames[0]);
+  document.getElementById(`sortRunBtn-${key}`).textContent = 'Run';
+  document.getElementById(`sortStepBtn-${key}`).disabled = false;
+  const infoEl = document.getElementById(`sortInfo-${key}`);
+  if (infoEl) infoEl.textContent = 'Array generated. Press Run or Step.';
+  log(`sortLog-${key}`, 'generate', `new array: [${arr.join(', ')}]`);
+}
+
+function sortStep(key) {
+  const st = _sortStates[key];
+  if (st.running || !st.frames.length) return;
+  if (st.idx < st.frames.length - 1) {
+    st.idx++;
+    _renderSortFrame(key, st.frames[st.idx]);
+    if (st.frames[st.idx].done) {
+      document.getElementById(`sortStepBtn-${key}`).disabled = true;
+      log(`sortLog-${key}`, 'done', 'sort complete');
+    }
+  }
+}
+
+async function sortRunToggle(key) {
+  const st = _sortStates[key];
+
+  if (st.running) {
+    st.running = false;
+    document.getElementById(`sortRunBtn-${key}`).textContent = 'Run';
+    document.getElementById(`sortStepBtn-${key}`).disabled = false;
+    return;
+  }
+
+  if (!st.frames.length) { sortGenerate(key); await sleep(60); }
+  if (st.frames[st.idx] && st.frames[st.idx].done) st.idx = 0;
+
+  st.running = true;
+  document.getElementById(`sortRunBtn-${key}`).textContent = 'Pause';
+  document.getElementById(`sortStepBtn-${key}`).disabled = true;
+
+  const speedEl = document.getElementById(`sortSpeed-${key}`);
+
+  while (st.running && st.idx < st.frames.length) {
+    _renderSortFrame(key, st.frames[st.idx]);
+    if (st.frames[st.idx].done) break;
+    st.idx++;
+    const delay = speedEl ? (980 - parseInt(speedEl.value)) : 420;
+    await sleep(delay);
+  }
+
+  st.running = false;
+  document.getElementById(`sortRunBtn-${key}`).textContent = 'Run';
+  const isDone = st.frames[st.idx] && st.frames[st.idx].done;
+  document.getElementById(`sortStepBtn-${key}`).disabled = !!isDone;
+  if (isDone) log(`sortLog-${key}`, 'done', 'sort complete');
+}
+
+function sortReset(key) {
+  const st = _sortStates[key];
+  st.running = false;
+  document.getElementById(`sortRunBtn-${key}`).textContent = 'Run';
+  if (!st.frames.length) return;
+  st.idx = 0;
+  _renderSortFrame(key, st.frames[0]);
+  const infoEl = document.getElementById(`sortInfo-${key}`);
+  if (infoEl) infoEl.textContent = 'Reset to initial array.';
+  document.getElementById(`sortStepBtn-${key}`).disabled = false;
+}
+
+// ═══════════════════════════════════════════════
+//  ALGORITHMS — TREE TRAVERSALS
+// ═══════════════════════════════════════════════
+
+let algoTreeRoot = null;
+let algoTreeNextId = 1;
+let algoTreeAnimating = false;
+
+function algoTreeInsert() {
+  if (algoTreeAnimating) return;
+  const inp = document.getElementById('algoTreeInput');
+  const v = parseInt(inp.value, 10);
+  if (isNaN(v)) return;
+  inp.value = '';
+
+  const node = { v, left: null, right: null, id: algoTreeNextId++ };
+  if (!algoTreeRoot) {
+    algoTreeRoot = node;
+  } else {
+    let cur = algoTreeRoot;
+    while (true) {
+      if (v < cur.v) {
+        if (!cur.left)  { cur.left  = node; break; }
+        cur = cur.left;
+      } else if (v > cur.v) {
+        if (!cur.right) { cur.right = node; break; }
+        cur = cur.right;
+      } else {
+        log('algoTreeLog', 'insert', `<span class="val">${v}</span> already in tree`);
+        return;
+      }
+    }
+  }
+
+  _renderAlgoTree(new Set([node.id]));
+  setTimeout(() => _renderAlgoTree(), 500);
+  log('algoTreeLog', 'insert', `<span class="val">${v}</span> inserted`);
+}
+
+function algoTreeClear() {
+  if (algoTreeAnimating) return;
+  algoTreeRoot = null;
+  algoTreeNextId = 1;
+  _renderAlgoTree();
+  const sc = document.getElementById('algoTreeSeqCanvas');
+  sc.innerHTML = '<div class="empty-state"><span class="ornament">\u00a7</span>Run a traversal to see the visit order</div>';
+  log('algoTreeLog', 'clear', 'tree cleared');
+}
+
+async function algoTreeTraverse(order) {
+  if (algoTreeAnimating) return;
+  if (!algoTreeRoot) { log('algoTreeLog', 'traverse', 'tree is empty'); return; }
+  algoTreeAnimating = true;
+
+  const nodes = _algoTreeCollect(algoTreeRoot, order);
+  const seqCanvas = document.getElementById('algoTreeSeqCanvas');
+  seqCanvas.innerHTML = '<div class="traversal-sequence" id="algoTreeSeq"></div>';
+  const seqEl = document.getElementById('algoTreeSeq');
+
+  const visited = new Set();
+
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    visited.add(n.id);
+    _renderAlgoTree(visited);
+
+    if (i > 0) {
+      const arr = document.createElement('span');
+      arr.className = 'traversal-seq-arrow';
+      arr.textContent = '\u2192';
+      seqEl.appendChild(arr);
+    }
+    const valEl = document.createElement('span');
+    valEl.className = 'traversal-seq-val active';
+    valEl.textContent = n.v;
+    seqEl.appendChild(valEl);
+
+    await sleep(460);
+    valEl.classList.remove('active');
+    valEl.classList.add('visited');
+  }
+
+  _renderAlgoTree();
+
+  const names = {
+    inorder:    'In-order (L\u2192N\u2192R)',
+    preorder:   'Pre-order (N\u2192L\u2192R)',
+    postorder:  'Post-order (L\u2192R\u2192N)',
+    levelorder: 'Level-order (BFS)'
+  };
+  log('algoTreeLog', 'traverse',
+    `${names[order]}: ${nodes.map(n => `<span class="val">${n.v}</span>`).join(' \u2192 ')}`);
+  algoTreeAnimating = false;
+}
+
+function _algoTreeCollect(root, order) {
+  const out = [];
+  if (!root) return out;
+  if (order === 'inorder')        { (function w(n){if(!n)return;w(n.left);out.push(n);w(n.right);})(root); }
+  else if (order === 'preorder')  { (function w(n){if(!n)return;out.push(n);w(n.left);w(n.right);})(root); }
+  else if (order === 'postorder') { (function w(n){if(!n)return;w(n.left);w(n.right);out.push(n);})(root); }
+  else { const q=[root]; while(q.length){const n=q.shift();out.push(n);if(n.left)q.push(n.left);if(n.right)q.push(n.right);} }
+  return out;
+}
+
+// ═══════════════════════════════════════════════
+//  ALGO TREE TRAVERSALS — RANDOM
+// ═══════════════════════════════════════════════
+function algoTreeRandom() {
+  if (algoTreeAnimating) return;
+  algoTreeRoot = null; algoTreeNextId = 1;
+  const vals = _rndArr(_rndInt(5, 9), 1, 99);
+  vals.forEach(v => {
+    const node = { v, left: null, right: null, id: algoTreeNextId++ };
+    if (!algoTreeRoot) { algoTreeRoot = node; return; }
+    let cur = algoTreeRoot;
+    while (true) {
+      if (v < cur.v) { if (!cur.left) { cur.left = node; break; } cur = cur.left; }
+      else if (v > cur.v) { if (!cur.right) { cur.right = node; break; } cur = cur.right; }
+      else break;
+    }
+  });
+  const sc = document.getElementById('algoTreeSeqCanvas');
+  sc.innerHTML = '<div class="empty-state"><span class="ornament">\u00a7</span>Run a traversal to see the visit order</div>';
+  _renderAlgoTree();
+  log('algoTreeLog', 'random', `[${vals.join(', ')}]`);
+}
+
+function _renderAlgoTree(highlightSet) {
+  const canvas = document.getElementById('algoTreeCanvas');
+  const hl = highlightSet || new Set();
+
+  if (!algoTreeRoot) {
+    canvas.innerHTML = '<div class="empty-state"><span class="ornament">\u00a7</span>Insert values to build a BST</div>';
+    return;
+  }
+
+  const W = 520, lH = 72, top = 36, r = 20;
+  const pos = layoutBinaryTree(algoTreeRoot, W, lH, top);
+  let maxY = 0;
+  for (const p of pos.values()) maxY = Math.max(maxY, p.y);
+
+  let svg = `<svg viewBox="0 0 ${W} ${maxY+r+30}" style="width:100%;height:${maxY+r+30}px;display:block">`;
+
+  for (const [node, {x,y}] of pos) {
+    if (node.left  && pos.has(node.left))  { const p=pos.get(node.left);  svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+    if (node.right && pos.has(node.right)) { const p=pos.get(node.right); svg+=`<line class="edge-line" x1="${x}" y1="${y}" x2="${p.x}" y2="${p.y}"/>`; }
+  }
+  for (const [node, {x,y}] of pos) {
+    const isHl = hl.has(node.id);
+    svg += `<circle class="node-circle${isHl ? ' highlight' : ''}" cx="${x}" cy="${y}" r="${r}"/>`;
+    svg += `<text class="node-text" x="${x}" y="${y}">${node.v}</text>`;
+  }
+
+  svg += '</svg>';
+  canvas.innerHTML = svg;
+}
+
+// ═══════════════════════════════════════════════
+//  PSEUDOCODE — C++ DATA & LANGUAGE TOGGLE
+// ═══════════════════════════════════════════════
+
+const _sortCpp = {
+  sel: [
+    'void selectionSort(int a[], int n) {',
+    '    for (int i = 0; i < n - 1; i++) {',
+    '        int minIdx = i;',
+    '        for (int j = i+1; j < n; j++)',
+    '            if (a[j] < a[minIdx])',
+    '                minIdx = j;',
+    '        swap(a[i], a[minIdx]);',
+    '    }',
+    '}'
+  ],
+  ins: [
+    'void insertionSort(int a[], int n) {',
+    '    for (int i = 1; i < n; i++) {',
+    '        int key = a[i];',
+    '        int j = i - 1;',
+    '        while (j >= 0 && a[j] > key) {',
+    '            a[j + 1] = a[j];',
+    '            j--;',
+    '        }',
+    '        a[j + 1] = key;',
+    '    }',
+    '}'
+  ],
+  mrg: [
+    'void merge(int a[], int l, int m, int r) {',
+    '    vector<int> L(a+l, a+m+1);',
+    '    vector<int> R(a+m+1, a+r+1);',
+    '    int i=0, j=0, k=l;',
+    '    while (i<L.size() && j<R.size())',
+    '        a[k++]=(L[i]<=R[j]) ? L[i++]:R[j++];',
+    '    while (i<L.size()) a[k++]=L[i++];',
+    '    while (j<R.size()) a[k++]=R[j++];',
+    '}',
+    '',
+    'void mergeSort(int a[], int l, int r) {',
+    '    if (l >= r) return;',
+    '    int m = (l + r) / 2;',
+    '    mergeSort(a, l, m);',
+    '    mergeSort(a, m+1, r);',
+    '    merge(a, l, m, r);',
+    '}'
+  ]
+};
+
+const _pseudoLang = { sel: 'pseudo', ins: 'pseudo', mrg: 'pseudo' };
+
+function _renderPseudoPane(key, activeLine = -1) {
+  const pseudoEl = document.getElementById(`sortPseudo-${key}`);
+  if (!pseudoEl) return;
+  const isCpp = _pseudoLang[key] === 'cpp';
+  const lines = isCpp ? (_sortCpp[key] || []) : (_sortPseudo[key] || []);
+  // In C++ mode, never highlight a line (line mapping differs)
+  const highlightLine = isCpp ? -1 : activeLine;
+  let pHtml = '<div class="sort-pseudo">';
+  lines.forEach((line, idx) => {
+    const esc = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    pHtml += `<div class="pseudo-line${idx === highlightLine ? ' active' : ''}">${esc || '\u00a0'}</div>`;
+  });
+  pHtml += '</div>';
+  pseudoEl.innerHTML = pHtml;
+}
+
+function togglePseudoLang(key) {
+  _pseudoLang[key] = _pseudoLang[key] === 'pseudo' ? 'cpp' : 'pseudo';
+  const isCpp = _pseudoLang[key] === 'cpp';
+  const labelEl = document.getElementById(`pseudoLangLabel-${key}`);
+  const btnEl   = document.getElementById(`pseudoToggle-${key}`);
+  if (labelEl) labelEl.textContent = isCpp ? 'C++' : 'Pseudocode';
+  if (btnEl)   { btnEl.textContent = isCpp ? 'Pseudo' : 'C++'; btnEl.classList.toggle('active', isCpp); }
+  // Re-render at current frame if one exists, else just render the pane
+  const st = _sortStates[key];
+  if (st && st.frames.length) {
+    _renderSortFrame(key, st.frames[st.idx]);
+  } else {
+    _renderPseudoPane(key, -1);
+  }
+}
+
+// Show pseudocode immediately on load (no array needed)
+(function initSortPseudo() {
+  ['sel', 'ins', 'mrg'].forEach(key => _renderPseudoPane(key, -1));
+})();
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — UTILITIES
+// ═══════════════════════════════════════════════
+function _rndInt(lo, hi) { return Math.floor(Math.random() * (hi - lo + 1)) + lo; }
+function _rndArr(n, lo, hi) {
+  const used = new Set(), arr = [];
+  while (arr.length < n) {
+    const v = _rndInt(lo, hi);
+    if (!used.has(v)) { used.add(v); arr.push(v); }
+  }
+  return arr;
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — STACK
+// ═══════════════════════════════════════════════
+function stackRandom() {
+  if (isAnimating) return;
+  stackData = _rndArr(_rndInt(4, 7), 1, 99);
+  log('stackLog', 'random', `generated [${stackData.join(', ')}]`);
+  renderStack();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — LINKED LIST
+// ═══════════════════════════════════════════════
+function llRandom() {
+  if (llAnimating) return;
+  llData = _rndArr(_rndInt(4, 7), 1, 99);
+  log('llLog', 'random', `generated [${llData.join(', ')}]`);
+  renderLinkedList(true);
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — QUEUE
+// ═══════════════════════════════════════════════
+function queueRandom() {
+  if (queueAnimating) return;
+  const vals = _rndArr(_rndInt(4, 6), 1, 99);
+  queueData = [];
+  circularSlots = Array(QUEUE_CAP).fill(null);
+  queueFront = 0; queueRear = -1; queueCount = 0;
+  twoStacksInbox = []; twoStacksOutbox = [];
+  if (queueImpl === 'circular') {
+    vals.forEach(v => { queueRear = (queueRear + 1) % QUEUE_CAP; circularSlots[queueRear] = v; queueCount++; });
+  } else if (queueImpl === 'two-stacks') {
+    twoStacksInbox = [...vals];
+  } else if (queueImpl === 'sll-rear-head') {
+    // rear at head: enqueue prepends, so stored as [latest,...,oldest] = [rear...,front]
+    queueData = [...vals].reverse();
+  } else {
+    queueData = [...vals];
+  }
+  log('queueLog', 'random', `generated [${vals.join(', ')}]`);
+  renderQueue();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — HEAP
+// ═══════════════════════════════════════════════
+function heapRandom() {
+  if (heapAnimating) return;
+  heapData = _rndArr(_rndInt(5, 8), 1, 99);
+  const isMin = heapImpl === 'min-heap';
+  const n = heapData.length;
+  for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+    let k = i;
+    while (true) {
+      const l = 2*k+1, r = 2*k+2; let t = k;
+      if (l < n && (isMin ? heapData[l] < heapData[t] : heapData[l] > heapData[t])) t = l;
+      if (r < n && (isMin ? heapData[r] < heapData[t] : heapData[r] > heapData[t])) t = r;
+      if (t !== k) { [heapData[k], heapData[t]] = [heapData[t], heapData[k]]; k = t; } else break;
+    }
+  }
+  log('heapLog', 'random', `generated [${heapData.join(', ')}]`);
+  renderHeap();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — BINARY TREE
+// ═══════════════════════════════════════════════
+function btRandom() {
+  if (btAnimating) return;
+  btRoot = null; btNextId = 1;
+  const vals = _rndArr(_rndInt(5, 9), 1, 99);
+  vals.forEach(v => {
+    const node = { v, left: null, right: null, id: btNextId++ };
+    if (!btRoot) { btRoot = node; }
+    else { const s = _btNextSlot(btRoot); s.parent[s.side] = node; }
+  });
+  log('btLog', 'random', `generated [${vals.join(', ')}]`);
+  renderBT();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — BST
+// ═══════════════════════════════════════════════
+function bstRandom() {
+  if (bstAnimating) return;
+  bstRoot = null; bstNextId = 1;
+  const vals = _rndArr(_rndInt(5, 9), 1, 99);
+  vals.forEach(v => {
+    const path = _bstInsertPath(bstRoot, v);
+    if (path.length && path[path.length-1].v === v) return;
+    const node = { v, left: null, right: null, id: bstNextId++ };
+    if (!bstRoot) { bstRoot = node; }
+    else { const par = path[path.length-1]; if (v < par.v) par.left = node; else par.right = node; }
+  });
+  log('bstLog', 'random', `generated [${vals.join(', ')}]`);
+  renderBST();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — AVL TREE
+// ═══════════════════════════════════════════════
+function avlRandom() {
+  if (avlAnimating) return;
+  avlRoot = null; avlNextId = 1;
+  const vals = _rndArr(_rndInt(5, 9), 1, 99);
+  vals.forEach(v => { avlRoot = _avlInsert(avlRoot, v, []); });
+  log('avlLog', 'random', `generated [${vals.join(', ')}]`);
+  renderAVL();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — B-TREE
+// ═══════════════════════════════════════════════
+function btreeRandom() {
+  if (btreeAnimating) return;
+  btreeRoot = null;
+  const vals = _rndArr(_rndInt(6, 12), 1, 99);
+  vals.forEach(v => _btreeInsert(v, []));
+  log('btreeLog', 'random', `generated [${vals.join(', ')}]`);
+  renderBTree();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — HASH TABLE
+// ═══════════════════════════════════════════════
+function htRandom() {
+  htChains = Array.from({length: HT_SIZE}, () => []);
+  htSlots  = Array(HT_SIZE).fill(null);
+  const keys = _rndArr(_rndInt(4, 6), 1, 50);
+  const vals = keys.map(() => _rndInt(1, 99));
+  if (htImpl === 'chaining') {
+    keys.forEach((k, i) => htChains[htHash(k)].push({ key: k, val: vals[i] }));
+  } else {
+    keys.forEach((k, i) => {
+      const h = htHash(k);
+      for (let p = 0; p < HT_SIZE; p++) {
+        const idx = (h + p) % HT_SIZE;
+        if (htSlots[idx] === null) { htSlots[idx] = { key: k, val: vals[i] }; break; }
+      }
+    });
+  }
+  log('htLog', 'random', `inserted ${keys.length} pairs`);
+  renderHT();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — DICTIONARY
+// ═══════════════════════════════════════════════
+function dictRandom() {
+  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictBSTRoot = null; dictBSTNextId = 1;
+  const keys = _rndArr(_rndInt(4, 6), 1, 50);
+  const vals = keys.map(() => _rndInt(1, 99));
+  if (dictImpl === 'hashmap') {
+    keys.forEach((k, i) => dictChains[dictHash(k)].push({ key: k, val: vals[i] }));
+  } else {
+    keys.forEach((k, i) => {
+      const node = { key: k, val: vals[i], left: null, right: null, id: dictBSTNextId++ };
+      if (!dictBSTRoot) { dictBSTRoot = node; return; }
+      let cur = dictBSTRoot;
+      while (true) {
+        if (k < cur.key) { if (!cur.left)  { cur.left  = node; break; } cur = cur.left; }
+        else if (k > cur.key) { if (!cur.right) { cur.right = node; break; } cur = cur.right; }
+        else { cur.val = vals[i]; break; }
+      }
+    });
+  }
+  log('dictLog', 'random', `inserted ${keys.length} pairs`);
+  renderDict();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — UNION-FIND
+// ═══════════════════════════════════════════════
+function ufRandom() {
+  if (ufAnimating) return;
+  ufParent = Array(UF_MAX).fill(-1);
+  ufRank   = Array(UF_MAX).fill(0);
+  ufExists = Array(UF_MAX).fill(false);
+  const n = _rndInt(5, 8);
+  for (let i = 0; i < n; i++) { ufExists[i] = true; ufParent[i] = i; }
+  const useRank = ufImpl === 'rank' || ufImpl === 'both';
+  const numUnions = _rndInt(2, Math.floor(n / 2));
+  for (let u = 0; u < numUnions; u++) {
+    const a = _rndInt(0, n-1), b = _rndInt(0, n-1);
+    if (a === b) continue;
+    const ra = _ufFindRoot(a), rb = _ufFindRoot(b);
+    if (ra === rb) continue;
+    if (useRank) {
+      if (ufRank[ra] < ufRank[rb])      ufParent[ra] = rb;
+      else if (ufRank[ra] > ufRank[rb]) ufParent[rb] = ra;
+      else { ufParent[rb] = ra; ufRank[ra]++; }
+    } else {
+      ufParent[rb] = ra;
+    }
+  }
+  log('ufLog', 'random', `${n} elements, ${numUnions} union attempts`);
+  renderUF();
+}
+
+// ═══════════════════════════════════════════════
+//  RANDOM GENERATE — GRAPH
+// ═══════════════════════════════════════════════
+function graphRandom() {
+  if (graphAnimating) return;
+  graphNodes = []; graphEdges = []; graphNextId = 1;
+  const n = _rndInt(4, 7);
+  for (let i = 0; i < n; i++) graphNodes.push({ id: graphNextId++ });
+  const ids = graphNodes.map(nd => nd.id);
+  // First ensure the graph is connected (spanning chain)
+  for (let i = 1; i < ids.length; i++) graphEdges.push({ from: ids[i-1], to: ids[i] });
+  // Add a few extra random edges
+  const extras = _rndInt(1, Math.min(3, n));
+  for (let e = 0; e < extras; e++) {
+    const from = ids[_rndInt(0, ids.length-1)];
+    const to   = ids[_rndInt(0, ids.length-1)];
+    if (from !== to && !graphEdges.find(ed => ed.from === from && ed.to === to)) {
+      graphEdges.push({ from, to });
+    }
+  }
+  log('graphLog', 'random', `${n} nodes, ${graphEdges.length} edges`);
+  renderGraph();
+}

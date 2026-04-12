@@ -15,12 +15,16 @@
   <div class="subtitle">An Interactive Visual Guide to Abstract Data Types and Algorithms</div>
 </header>
 
-<div class="edition-bar">
-  <span>Data Structures &amp; Algorithms</span>
-  <span id="todayDate"></span>
+<!-- ─── Section Tabs ─── -->
+<div class="section-tabs" id="sectionTabs">
+  <div class="section-tabs-left">
+    <button class="section-tab active" data-section="ds">Data Structures</button>
+    <button class="section-tab" data-section="algorithms">Algorithms</button>
+  </div>
+  <span class="section-tabs-date" id="todayDate"></span>
 </div>
 
-<!-- ─── Navigation ─── -->
+<!-- ─── DS Navigation ─── -->
 <nav class="nav-strip" id="navStrip">
   <button class="nav-btn active" data-panel="stack">Stack</button>
   <button class="nav-btn" data-panel="linkedlist">Linked List</button>
@@ -30,7 +34,14 @@
   <button class="nav-btn" data-panel="bst">BST</button>
   <button class="nav-btn" data-panel="avl">AVL Tree</button>
   <button class="nav-btn" data-panel="btree">B-Tree</button>
+  <button class="nav-btn" data-panel="hashtable">Hash Table</button>
+  <button class="nav-btn" data-panel="dictionary">Dictionary</button>
+  <button class="nav-btn" data-panel="unionfind">Union-Find</button>
+  <button class="nav-btn" data-panel="graph">Graph</button>
 </nav>
+
+<!-- ─── DS Section ─── -->
+<div id="section-ds">
 
 <!-- ─── Page Body ─── -->
 <div class="page-body">
@@ -68,6 +79,7 @@
         <button class="ctrl-btn" onclick="stackPush()">Push</button>
         <button class="ctrl-btn outline" onclick="stackPop()">Pop</button>
         <button class="ctrl-btn outline" onclick="stackPeek()">Peek</button>
+        <button class="ctrl-btn outline" onclick="stackRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger" onclick="stackClear()">Clear</button>
       </div>
@@ -117,6 +129,7 @@
         <button class="ctrl-btn outline" onclick="llDeleteTail()">Del Tail</button>
         <button class="ctrl-btn outline" onclick="llDeleteValue()">Del Value</button>
         <button class="ctrl-btn outline" onclick="llSearch()">Search</button>
+        <button class="ctrl-btn outline" onclick="llRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger"  onclick="llClear()">Clear</button>
       </div>
@@ -163,6 +176,7 @@
         <button class="ctrl-btn" onclick="queueEnqueue()">Enqueue</button>
         <button class="ctrl-btn outline" onclick="queueDequeue()">Dequeue</button>
         <button class="ctrl-btn outline" onclick="queuePeek()">Peek</button>
+        <button class="ctrl-btn outline" onclick="queueRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger" onclick="queueClear()">Clear</button>
       </div>
@@ -205,6 +219,7 @@
         <button class="ctrl-btn" onclick="heapInsert()">Insert</button>
         <button class="ctrl-btn outline" onclick="heapExtract()">Extract</button>
         <button class="ctrl-btn outline" onclick="heapPeek()">Peek</button>
+        <button class="ctrl-btn outline" onclick="heapRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger" onclick="heapClear()">Clear</button>
       </div>
@@ -246,6 +261,7 @@
         <button class="ctrl-btn" onclick="btInsert()">Insert</button>
         <button class="ctrl-btn outline" onclick="btDelete()">Delete</button>
         <button class="ctrl-btn outline" onclick="btSearch()">Search</button>
+        <button class="ctrl-btn outline" onclick="btRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn outline" onclick="btTraverse('inorder')">In-order</button>
         <button class="ctrl-btn outline" onclick="btTraverse('preorder')">Pre-order</button>
@@ -292,6 +308,7 @@
         <button class="ctrl-btn" onclick="bstInsert()">Insert</button>
         <button class="ctrl-btn outline" onclick="bstRemove()">Remove</button>
         <button class="ctrl-btn outline" onclick="bstSearch()">Search</button>
+        <button class="ctrl-btn outline" onclick="bstRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn outline" onclick="bstTraverse('inorder')">In-order</button>
         <button class="ctrl-btn outline" onclick="bstTraverse('preorder')">Pre-order</button>
@@ -338,6 +355,7 @@
         <button class="ctrl-btn" onclick="avlInsert()">Insert</button>
         <button class="ctrl-btn outline" onclick="avlRemove()">Remove</button>
         <button class="ctrl-btn outline" onclick="avlSearch()">Search</button>
+        <button class="ctrl-btn outline" onclick="avlRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn outline" onclick="avlTraverse('inorder')">In-order</button>
         <button class="ctrl-btn outline" onclick="avlTraverse('preorder')">Pre-order</button>
@@ -384,6 +402,7 @@
         <button class="ctrl-btn" onclick="btreeInsert()">Insert</button>
         <button class="ctrl-btn outline" onclick="btreeRemove()">Remove</button>
         <button class="ctrl-btn outline" onclick="btreeSearch()">Search</button>
+        <button class="ctrl-btn outline" onclick="btreeRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger" onclick="btreeClear()">Clear</button>
       </div>
@@ -406,7 +425,353 @@
       <div class="op-log" id="btreeLog"></div>
     </div>
 
+
+    <!-- ═══ HASH TABLE ═══ -->
+    <div class="panel" id="panel-hashtable">
+      <div class="section-header">
+        <h2>Hash Table</h2>
+        <span class="issue-num">Key → Value — hash-indexed storage</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-ht-impl="chaining"  onclick="setHTImpl('chaining')">Separate Chaining</button>
+        <button class="impl-btn"        data-ht-impl="open-addr" onclick="setHTImpl('open-addr')">Open Addressing — Linear Probe</button>
+      </div>
+
+      <div class="impl-note" id="htImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="htKeyInput" type="number" placeholder="Key"   style="width:78px">
+        <input class="ctrl-input" id="htValInput" type="number" placeholder="Value" style="width:78px">
+        <button class="ctrl-btn"         onclick="htPut()">Put</button>
+        <button class="ctrl-btn outline" onclick="htGet()">Get</button>
+        <button class="ctrl-btn outline" onclick="htRemove()">Remove</button>
+        <button class="ctrl-btn outline" onclick="htRandom()">Random</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger"  onclick="htClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Abstract Map</div>
+          <div class="viz-canvas" id="htCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Put a key–value pair to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Internal Array (N = 8)</div>
+          <div class="viz-canvas" id="htImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Put a key–value pair to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="htLog"></div>
+    </div>
+
+    <!-- ═══ DICTIONARY ═══ -->
+    <div class="panel" id="panel-dictionary">
+      <div class="section-header">
+        <h2>Dictionary</h2>
+        <span class="issue-num">Key → Value — ordered or hashed</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-dict-impl="hashmap" onclick="setDictImpl('hashmap')">Hash Map — Separate Chaining</button>
+        <button class="impl-btn"        data-dict-impl="bst"     onclick="setDictImpl('bst')">BST-backed</button>
+      </div>
+
+      <div class="impl-note" id="dictImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="dictKeyInput" type="number" placeholder="Key"   style="width:78px">
+        <input class="ctrl-input" id="dictValInput" type="number" placeholder="Value" style="width:78px">
+        <button class="ctrl-btn"         onclick="dictInsert()">Insert</button>
+        <button class="ctrl-btn outline" onclick="dictLookup()">Lookup</button>
+        <button class="ctrl-btn outline" onclick="dictDelete()">Delete</button>
+        <button class="ctrl-btn outline" onclick="dictRandom()">Random</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger"  onclick="dictClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Abstract Dictionary</div>
+          <div class="viz-canvas" id="dictCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a key–value pair to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Internal Representation</div>
+          <div class="viz-canvas" id="dictImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Insert a key–value pair to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="dictLog"></div>
+    </div>
+
+    <!-- ═══ UNION-FIND ═══ -->
+    <div class="panel" id="panel-unionfind">
+      <div class="section-header">
+        <h2>Disjoint Set — Union-Find</h2>
+        <span class="issue-num">Forest of sets — find &amp; merge</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Optimizations:</span>
+        <button class="impl-btn active" data-uf-impl="naive" onclick="setUFImpl('naive')">None (naïve)</button>
+        <button class="impl-btn"        data-uf-impl="rank"  onclick="setUFImpl('rank')">Union by Rank</button>
+        <button class="impl-btn"        data-uf-impl="path"  onclick="setUFImpl('path')">Path Compression</button>
+        <button class="impl-btn"        data-uf-impl="both"  onclick="setUFImpl('both')">Both (optimal)</button>
+      </div>
+
+      <div class="impl-note" id="ufImplNote"></div>
+
+      <div class="controls-bar">
+        <input class="ctrl-input" id="ufInput" type="number" placeholder="Element (0–9)" style="width:130px">
+        <button class="ctrl-btn"         onclick="ufMakeSet()">Make-Set</button>
+        <button class="ctrl-btn outline" onclick="ufFind()">Find</button>
+        <span class="ctrl-spacer"></span>
+        <input class="ctrl-input" id="ufXInput" type="number" placeholder="x" style="width:58px">
+        <input class="ctrl-input" id="ufYInput" type="number" placeholder="y" style="width:58px">
+        <button class="ctrl-btn outline" onclick="ufUnion()">Union(x, y)</button>
+        <button class="ctrl-btn outline" onclick="ufRandom()">Random</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger"  onclick="ufClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Forest View (sets as trees)</div>
+          <div class="viz-canvas" id="ufCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Make-Set to add elements</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Array Representation</div>
+          <div class="viz-canvas" id="ufImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Make-Set to add elements</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="ufLog"></div>
+    </div>
+
+    <!-- ═══ GRAPH ═══ -->
+    <div class="panel" id="panel-graph">
+      <div class="section-header">
+        <h2>Graph</h2>
+        <span class="issue-num">G = (V, E) — vertices and edges</span>
+      </div>
+
+      <div class="impl-selector">
+        <span class="impl-selector-label">Implementation:</span>
+        <button class="impl-btn active" data-graph-impl="adjacency-list"   onclick="setGraphImpl('adjacency-list')">Adjacency List</button>
+        <button class="impl-btn"        data-graph-impl="adjacency-matrix" onclick="setGraphImpl('adjacency-matrix')">Adjacency Matrix</button>
+        <span class="impl-selector-label" style="margin-left:1.2rem">Type:</span>
+        <button class="impl-btn active" data-graph-dir="directed"   onclick="setGraphDirected(true)">Directed</button>
+        <button class="impl-btn"        data-graph-dir="undirected" onclick="setGraphDirected(false)">Undirected</button>
+      </div>
+
+      <div class="impl-note" id="graphImplNote"></div>
+
+      <div class="controls-bar">
+        <button class="ctrl-btn" onclick="graphAddNode()">Add Node</button>
+        <input class="ctrl-input" id="graphFromInput" type="number" placeholder="From" style="width:82px">
+        <input class="ctrl-input" id="graphToInput"   type="number" placeholder="To"   style="width:82px">
+        <button class="ctrl-btn outline" onclick="graphAddEdge()">Add Edge</button>
+        <input class="ctrl-input" id="graphSrcInput" type="number" placeholder="Source" style="width:96px">
+        <button class="ctrl-btn outline" onclick="graphBFS()">BFS</button>
+        <button class="ctrl-btn outline" onclick="graphDFS()">DFS</button>
+        <button class="ctrl-btn outline" onclick="graphTopoSort()">Topo Sort</button>
+        <button class="ctrl-btn outline" onclick="graphRandom()">Random</button>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn danger" onclick="graphClear()">Clear</button>
+      </div>
+
+      <div class="viz-dual">
+        <div class="viz-pane">
+          <div class="viz-pane-label">Abstract Graph</div>
+          <div class="viz-canvas" id="graphCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Add a node to begin</div>
+          </div>
+        </div>
+        <div class="viz-pane">
+          <div class="viz-pane-label">Internal Representation</div>
+          <div class="viz-canvas" id="graphImplCanvas">
+            <div class="empty-state"><span class="ornament">§</span>Add a node to begin</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="op-log" id="graphLog"></div>
+    </div>
+
   </main>
+</div>
+
+</div><!-- /#section-ds -->
+
+<!-- ─── Algorithms Section ─── -->
+<div id="section-algorithms" style="display:none">
+
+  <!-- Algorithm Navigation -->
+  <nav class="nav-strip" id="algoNavStrip">
+    <button class="nav-btn active" data-algo="selection-sort">Selection Sort</button>
+    <button class="nav-btn" data-algo="insertion-sort">Insertion Sort</button>
+    <button class="nav-btn" data-algo="merge-sort">Merge Sort</button>
+    <div class="nav-algo-sep"></div>
+    <button class="nav-btn" data-algo="tree-traversals">Tree Traversals</button>
+  </nav>
+
+  <div class="page-body">
+    <aside class="sidebar" id="algoSidebar"></aside>
+    <main class="main-content">
+
+      <!-- ═══ SELECTION SORT ═══ -->
+      <div class="panel active" id="algo-panel-selection-sort">
+        <div class="section-header">
+          <h2>Selection Sort</h2>
+          <span class="issue-num">O(n²) — in-place, not stable</span>
+        </div>
+        <div class="controls-bar">
+          <button class="ctrl-btn" onclick="sortGenerate('sel')">New Array</button>
+          <button class="ctrl-btn outline" id="sortRunBtn-sel" onclick="sortRunToggle('sel')">Run</button>
+          <button class="ctrl-btn outline" id="sortStepBtn-sel" onclick="sortStep('sel')" disabled>Step →</button>
+          <span class="sort-speed-label">Speed</span>
+          <input type="range" class="sort-speed-slider" id="sortSpeed-sel" min="80" max="900" value="420" step="40">
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn danger" onclick="sortReset('sel')">Reset</button>
+        </div>
+        <div class="sort-step-info" id="sortInfo-sel">Generate an array to begin.</div>
+        <div class="viz-dual" style="grid-template-columns:3fr 2fr">
+          <div class="viz-pane">
+            <div class="viz-pane-label">Array</div>
+            <div class="viz-canvas" id="sortCanvas-sel">
+              <div class="empty-state"><span class="ornament">§</span>Generate an array to begin</div>
+            </div>
+          </div>
+          <div class="viz-pane">
+            <div class="viz-pane-label pseudo-lang-header">
+              <span id="pseudoLangLabel-sel">Pseudocode</span>
+              <button class="pseudo-lang-toggle" id="pseudoToggle-sel" onclick="togglePseudoLang('sel')">C++</button>
+            </div>
+            <div class="viz-canvas sort-pseudo-pane" id="sortPseudo-sel"></div>
+          </div>
+        </div>
+        <div class="op-log" id="sortLog-sel"></div>
+      </div>
+
+      <!-- ═══ INSERTION SORT ═══ -->
+      <div class="panel" id="algo-panel-insertion-sort">
+        <div class="section-header">
+          <h2>Insertion Sort</h2>
+          <span class="issue-num">O(n²) worst · O(n) best — stable, in-place</span>
+        </div>
+        <div class="controls-bar">
+          <button class="ctrl-btn" onclick="sortGenerate('ins')">New Array</button>
+          <button class="ctrl-btn outline" id="sortRunBtn-ins" onclick="sortRunToggle('ins')">Run</button>
+          <button class="ctrl-btn outline" id="sortStepBtn-ins" onclick="sortStep('ins')" disabled>Step →</button>
+          <span class="sort-speed-label">Speed</span>
+          <input type="range" class="sort-speed-slider" id="sortSpeed-ins" min="80" max="900" value="420" step="40">
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn danger" onclick="sortReset('ins')">Reset</button>
+        </div>
+        <div class="sort-step-info" id="sortInfo-ins">Generate an array to begin.</div>
+        <div class="viz-dual" style="grid-template-columns:3fr 2fr">
+          <div class="viz-pane">
+            <div class="viz-pane-label">Array</div>
+            <div class="viz-canvas" id="sortCanvas-ins">
+              <div class="empty-state"><span class="ornament">§</span>Generate an array to begin</div>
+            </div>
+          </div>
+          <div class="viz-pane">
+            <div class="viz-pane-label pseudo-lang-header">
+              <span id="pseudoLangLabel-ins">Pseudocode</span>
+              <button class="pseudo-lang-toggle" id="pseudoToggle-ins" onclick="togglePseudoLang('ins')">C++</button>
+            </div>
+            <div class="viz-canvas sort-pseudo-pane" id="sortPseudo-ins"></div>
+          </div>
+        </div>
+        <div class="op-log" id="sortLog-ins"></div>
+      </div>
+
+      <!-- ═══ MERGE SORT ═══ -->
+      <div class="panel" id="algo-panel-merge-sort">
+        <div class="section-header">
+          <h2>Merge Sort</h2>
+          <span class="issue-num">O(n log n) — stable, divide &amp; conquer</span>
+        </div>
+        <div class="controls-bar">
+          <button class="ctrl-btn" onclick="sortGenerate('mrg')">New Array</button>
+          <button class="ctrl-btn outline" id="sortRunBtn-mrg" onclick="sortRunToggle('mrg')">Run</button>
+          <button class="ctrl-btn outline" id="sortStepBtn-mrg" onclick="sortStep('mrg')" disabled>Step →</button>
+          <span class="sort-speed-label">Speed</span>
+          <input type="range" class="sort-speed-slider" id="sortSpeed-mrg" min="80" max="900" value="420" step="40">
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn danger" onclick="sortReset('mrg')">Reset</button>
+        </div>
+        <div class="sort-step-info" id="sortInfo-mrg">Generate an array to begin.</div>
+        <div class="viz-dual" style="grid-template-columns:3fr 2fr">
+          <div class="viz-pane">
+            <div class="viz-pane-label">Array</div>
+            <div class="viz-canvas" id="sortCanvas-mrg">
+              <div class="empty-state"><span class="ornament">§</span>Generate an array to begin</div>
+            </div>
+          </div>
+          <div class="viz-pane">
+            <div class="viz-pane-label pseudo-lang-header">
+              <span id="pseudoLangLabel-mrg">Pseudocode</span>
+              <button class="pseudo-lang-toggle" id="pseudoToggle-mrg" onclick="togglePseudoLang('mrg')">C++</button>
+            </div>
+            <div class="viz-canvas sort-pseudo-pane" id="sortPseudo-mrg"></div>
+          </div>
+        </div>
+        <div class="op-log" id="sortLog-mrg"></div>
+      </div>
+
+      <!-- ═══ TREE TRAVERSALS ═══ -->
+      <div class="panel" id="algo-panel-tree-traversals">
+        <div class="section-header">
+          <h2>BST Traversals</h2>
+          <span class="issue-num">In-order · Pre-order · Post-order · Level-order</span>
+        </div>
+        <div class="controls-bar">
+          <input class="ctrl-input" id="algoTreeInput" type="number" placeholder="Value" style="width:90px">
+          <button class="ctrl-btn" onclick="algoTreeInsert()">Insert</button>
+          <button class="ctrl-btn outline" onclick="algoTreeRandom()">Random</button>
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn outline" onclick="algoTreeTraverse('inorder')">In-order</button>
+          <button class="ctrl-btn outline" onclick="algoTreeTraverse('preorder')">Pre-order</button>
+          <button class="ctrl-btn outline" onclick="algoTreeTraverse('postorder')">Post-order</button>
+          <button class="ctrl-btn outline" onclick="algoTreeTraverse('levelorder')">Level-order</button>
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn danger" onclick="algoTreeClear()">Clear</button>
+        </div>
+        <div class="viz-dual" style="grid-template-columns:1fr 1fr">
+          <div class="viz-pane">
+            <div class="viz-pane-label">Binary Search Tree</div>
+            <div class="viz-canvas" id="algoTreeCanvas">
+              <div class="empty-state"><span class="ornament">§</span>Insert values to build a BST</div>
+            </div>
+          </div>
+          <div class="viz-pane">
+            <div class="viz-pane-label">Traversal Order</div>
+            <div class="viz-canvas" id="algoTreeSeqCanvas">
+              <div class="empty-state"><span class="ornament">§</span>Run a traversal to see the visit order</div>
+            </div>
+          </div>
+        </div>
+        <div class="op-log" id="algoTreeLog"></div>
+      </div>
+
+    </main>
+  </div>
 </div>
 
 <footer class="page-footer">
