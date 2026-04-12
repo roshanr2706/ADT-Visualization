@@ -8,11 +8,20 @@ let isAnimating = false;
 
 function log(logId, op, detail) {
   const el = $(logId);
-  const entry = document.createElement('span');
-  entry.className = 'log-entry';
-  entry.innerHTML = `<span class="timestamp">${now()}</span><span class="op">${op}</span> ${detail}`;
-  el.prepend(entry);
+  if (!el) return;
+  const mkEntry = () => {
+    const e = document.createElement('span');
+    e.className = 'log-entry';
+    e.innerHTML = `<span class="timestamp">${now()}</span><span class="op">${op}</span> ${detail}`;
+    return e;
+  };
+  el.prepend(mkEntry());
   if (el.children.length > 50) el.removeChild(el.lastChild);
+  // Mirror graph log entries to the algo-section copy
+  if (logId === 'graphLog') {
+    const el2 = $('algoGLog');
+    if (el2) { el2.prepend(mkEntry()); if (el2.children.length > 50) el2.removeChild(el2.lastChild); }
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -3801,12 +3810,12 @@ const graphImplMeta = {
   'adjacency-list': {
     label: 'Adjacency List',
     note: 'Each vertex stores a list of its neighbours. Space: O(V\u00a0+\u00a0E) — optimal for sparse graphs.',
-    complexity: [['add node','O(1)'],['add edge','O(1)'],['BFS / DFS','O(V\u00a0+\u00a0E)'],['topo sort','O(V\u00a0+\u00a0E)']]
+    complexity: [['add node','O(1)'],['add edge','O(1)'],['BFS / DFS','O(V\u00a0+\u00a0E)'],['topo sort','O(V\u00a0+\u00a0E)'],['Dijkstra','O((V\u00a0+\u00a0E)\u00a0log\u00a0V)'],['Kruskal','O(E\u00a0log\u00a0E)'],['Prim','O((V\u00a0+\u00a0E)\u00a0log\u00a0V)']]
   },
   'adjacency-matrix': {
     label: 'Adjacency Matrix',
     note: 'An n\u00d7n boolean grid. O(1) edge lookup, but O(V\u00b2) space \u2014 costly for sparse graphs.',
-    complexity: [['add node','O(V)'],['add edge','O(1)'],['edge lookup','O(1)'],['BFS / DFS','O(V\u00b2)'],['topo sort','O(V\u00b2)']]
+    complexity: [['add node','O(V)'],['add edge','O(1)'],['edge lookup','O(1)'],['BFS / DFS','O(V\u00b2)'],['topo sort','O(V\u00b2)'],['Dijkstra','O(V\u00b2)'],['Kruskal','O(E\u00a0log\u00a0E)'],['Prim','O(V\u00b2)']]
   }
 };
 
@@ -3836,6 +3845,7 @@ function setGraphImpl(type) {
     b.classList.toggle('active', b.dataset.graphImpl === type);
   });
   $('graphImplNote').innerHTML = graphImplMeta[type].note;
+  const algoNote = $('algoGImplNote'); if (algoNote) algoNote.innerHTML = graphImplMeta[type].note;
   if ($('panel-graph').classList.contains('active')) updateSidebar('graph');
   renderGraph();
 }
@@ -3918,6 +3928,130 @@ function _graphTopoSteps() {
   return { steps, order, hasCycle: order.length < graphNodes.length };
 }
 
+function _graphKruskalSteps() {
+  // Kruskal's MST — operates on edges as undirected (ignores direction)
+  const n = graphNodes.length;
+  if (n === 0) return { steps: [], mstWeight: 0 };
+
+  // Sort edges by weight (record original index for rendering)
+  const edgeOrder = graphEdges
+    .map((e, i) => ({ from: e.from, to: e.to, w: e.weight || 1, idx: i }))
+    .sort((a, b) => a.w - b.w);
+
+  // Union-Find with path compression + rank
+  const parent = {}, rank = {};
+  graphNodes.forEach(nd => { parent[nd.id] = nd.id; rank[nd.id] = 0; });
+  function find(x) { return parent[x] === x ? x : (parent[x] = find(parent[x])); }
+  function union(x, y) {
+    const rx = find(x), ry = find(y);
+    if (rx === ry) return false;
+    if (rank[rx] < rank[ry])      parent[rx] = ry;
+    else if (rank[rx] > rank[ry]) parent[ry] = rx;
+    else { parent[ry] = rx; rank[rx]++; }
+    return true;
+  }
+
+  const mstEdges = new Set();
+  const steps = [];
+  let mstWeight = 0;
+
+  for (const e of edgeOrder) {
+    // consider step: show this edge as the one being evaluated
+    steps.push({ phase: 'consider', edgeIdx: e.idx, mstEdges: new Set(mstEdges), edgeOrder: edgeOrder.map(x => x.idx) });
+    if (union(e.from, e.to)) {
+      mstEdges.add(e.idx);
+      mstWeight += e.w;
+      steps.push({ phase: 'accept', edgeIdx: e.idx, mstEdges: new Set(mstEdges), edgeOrder: edgeOrder.map(x => x.idx) });
+    } else {
+      steps.push({ phase: 'reject', edgeIdx: e.idx, mstEdges: new Set(mstEdges), edgeOrder: edgeOrder.map(x => x.idx) });
+    }
+    if (mstEdges.size === n - 1) break;
+  }
+  return { steps, mstWeight, edgeOrder };
+}
+
+function _graphPrimSteps(srcId) {
+  // Prim's MST — always treats graph as undirected
+  const n = graphNodes.length;
+  if (n === 0) return { steps: [], mstWeight: 0 };
+
+  // Build undirected adjacency with weights and original edge index
+  const adj = new Map();
+  graphNodes.forEach(nd => adj.set(nd.id, []));
+  graphEdges.forEach((e, idx) => {
+    const w = e.weight || 1;
+    adj.get(e.from)?.push({ to: e.to, w, edgeIdx: idx });
+    adj.get(e.to)?.push({ to: e.from, w, edgeIdx: idx });
+  });
+
+  const inMST   = new Set([srcId]);
+  const mstEdges = new Set();
+  const steps    = [];
+  let   mstWeight = 0;
+
+  while (inMST.size < n) {
+    let bestEntry = null, bestW = Infinity;
+    for (const nodeId of inMST) {
+      for (const entry of (adj.get(nodeId) || [])) {
+        if (!inMST.has(entry.to) && entry.w < bestW) {
+          bestW = entry.w;
+          bestEntry = entry;
+        }
+      }
+    }
+    if (!bestEntry) break; // disconnected graph
+
+    steps.push({ phase: 'consider', edgeIdx: bestEntry.edgeIdx, mstEdges: new Set(mstEdges), mstNodes: new Set(inMST) });
+    inMST.add(bestEntry.to);
+    mstEdges.add(bestEntry.edgeIdx);
+    mstWeight += bestEntry.w;
+    steps.push({ phase: 'accept', edgeIdx: bestEntry.edgeIdx, mstEdges: new Set(mstEdges), mstNodes: new Set(inMST) });
+  }
+  return { steps, mstWeight };
+}
+
+function _graphDijkstraSteps(srcId) {
+  // Dijkstra's shortest path — respects graph direction
+  const adj = new Map();
+  graphNodes.forEach(n => adj.set(n.id, []));
+  graphEdges.forEach((e, idx) => {
+    const w = e.weight || 1;
+    adj.get(e.from)?.push({ to: e.to, w, edgeIdx: idx });
+    if (!graphDirected) adj.get(e.to)?.push({ to: e.from, w, edgeIdx: idx });
+  });
+
+  const dist  = new Map();
+  const prev  = new Map();
+  const visited = new Set();
+  graphNodes.forEach(nd => { dist.set(nd.id, Infinity); prev.set(nd.id, null); });
+  dist.set(srcId, 0);
+
+  const steps = [];
+
+  while (true) {
+    // Pick unvisited node with smallest tentative distance (simple linear scan — correct for small N)
+    let u = null, uDist = Infinity;
+    for (const [id, d] of dist) {
+      if (!visited.has(id) && d < uDist) { uDist = d; u = id; }
+    }
+    if (u === null) break;
+
+    visited.add(u);
+    steps.push({ current: u, visited: new Set(visited), distances: new Map(dist), prev: new Map(prev), relaxEdgeIdx: null });
+
+    for (const { to, w, edgeIdx } of (adj.get(u) || [])) {
+      if (visited.has(to)) continue;
+      const nd = dist.get(u) + w;
+      if (nd < dist.get(to)) {
+        dist.set(to, nd);
+        prev.set(to, u);
+        steps.push({ current: u, visited: new Set(visited), distances: new Map(dist), prev: new Map(prev), relaxEdgeIdx: edgeIdx });
+      }
+    }
+  }
+  return { steps, dist, prev };
+}
+
 // ═══════════════════════════════════════════════
 //  GRAPH — LAYOUT
 // ═══════════════════════════════════════════════
@@ -3939,33 +4073,68 @@ function _graphLayout(W, H) {
 // ═══════════════════════════════════════════════
 const GRAPH_EMPTY = `<div class="empty-state"><span class="ornament">\u00a7</span>Add a node to begin</div>`;
 
-function renderGraph(hlSet, visitedSet) {
-  const c  = $('graphCanvas');
-  const ac = $('graphImplCanvas');
-  if (!c) return;
-  if (graphNodes.length === 0) { c.innerHTML = GRAPH_EMPTY; ac.innerHTML = GRAPH_EMPTY; return; }
-  const hl  = hlSet      || new Set();
-  const vis = visitedSet || new Set();
-  _renderGraphSVG(c, hl, vis);
-  if (graphImpl === 'adjacency-list') _renderGraphAdjList(ac, hl, vis);
-  else                                _renderGraphAdjMatrix(ac, hl, vis);
+function _renderGraphInto(c, ac, hl, vis, ex) {
+  if (graphNodes.length === 0) {
+    c.innerHTML = GRAPH_EMPTY;
+    if (ac) ac.innerHTML = GRAPH_EMPTY;
+    return;
+  }
+  _renderGraphSVG(c, hl, vis, ex);
+  if (!ac) return;
+  if (ex.dijkstraDist) {
+    _renderGraphDijkstraView(ac, hl, vis, ex);
+  } else if (ex.mstEdges !== undefined) {
+    _renderGraphMSTView(ac, ex);
+  } else if (graphImpl === 'adjacency-list') {
+    _renderGraphAdjList(ac, hl, vis);
+  } else {
+    _renderGraphAdjMatrix(ac, hl, vis);
+  }
 }
 
-function _renderGraphSVG(c, hlSet, visitedSet) {
+function renderGraph(hlSet, visitedSet, extra) {
+  const c  = $('graphCanvas');
+  if (!c) return;
+  const ac = $('graphImplCanvas');
+  const hl = hlSet  || new Set();
+  const vis = visitedSet || new Set();
+  const ex  = extra || {};
+  _renderGraphInto(c, ac, hl, vis, ex);
+  // Keep the algo-section copy in sync (same state, separate DOM target)
+  const ac2 = $('algoGCanvas'), ac2impl = $('algoGImplCanvas');
+  if (ac2) _renderGraphInto(ac2, ac2impl, hl, vis, ex);
+}
+
+function _renderGraphSVG(c, hlSet, visitedSet, extra) {
   const W = 540, H = 320;
   const pos = _graphLayout(W, H);
   const r   = GRAPH_R;
+  const ex  = extra || {};
+  const mstEdges       = ex.mstEdges       || new Set();
+  const considerEdgeIdx = ex.considerEdgeIdx !== undefined ? ex.considerEdgeIdx : null;
+  const rejectEdgeIdx   = ex.rejectEdgeIdx   !== undefined ? ex.rejectEdgeIdx   : null;
+  const relaxEdgeIdx    = ex.relaxEdgeIdx    !== undefined ? ex.relaxEdgeIdx    : null;
+  const mstNodes        = ex.mstNodes        || new Set();
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">`;
 
-  // Arrowhead marker for directed edges
+  // Arrowhead markers
+  svg += `<defs>`;
   if (graphDirected) {
-    svg += `<defs><marker id="garrow" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
-           `<path d="M0,0 L10,4 L0,8 z" fill="var(--ink)" opacity="0.72"/></marker></defs>`;
+    svg += `<marker id="garrow" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
+           `<path d="M0,0 L10,4 L0,8 z" fill="var(--ink)" opacity="0.72"/></marker>`;
+    svg += `<marker id="garrow-mst" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
+           `<path d="M0,0 L10,4 L0,8 z" fill="var(--success)"/></marker>`;
+    svg += `<marker id="garrow-consider" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
+           `<path d="M0,0 L10,4 L0,8 z" fill="var(--accent)"/></marker>`;
+    svg += `<marker id="garrow-relax" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse">` +
+           `<path d="M0,0 L10,4 L0,8 z" fill="#7b4fa0"/></marker>`;
   }
+  svg += `</defs>`;
 
   // Edges
-  for (const { from, to } of graphEdges) {
+  for (let ei = 0; ei < graphEdges.length; ei++) {
+    const { from, to, weight } = graphEdges[ei];
     if (from === to) continue;
     const p1 = pos.get(from), p2 = pos.get(to);
     if (!p1 || !p2) continue;
@@ -3975,7 +4144,6 @@ function _renderGraphSVG(c, hlSet, visitedSet) {
     if (len < 1) continue;
     const ux = dx / len, uy = dy / len;
 
-    // Offset parallel directed edges slightly so A→B and B→A don't overlap
     const hasReverse = graphDirected && graphEdges.some(e => e.from === to && e.to === from);
     const offPx = hasReverse ? -uy * 5 : 0;
     const offPy = hasReverse ?  ux * 5 : 0;
@@ -3985,10 +4153,33 @@ function _renderGraphSVG(c, hlSet, visitedSet) {
     const x2 = p2.x - ux * (r + (graphDirected ? 10 : 0)) + offPx;
     const y2 = p2.y - uy * (r + (graphDirected ? 10 : 0)) + offPy;
 
-    const bothVisited = visitedSet.has(from) && visitedSet.has(to);
-    const edgeCls = 'edge-line' + (bothVisited ? ' graph-edge-visited' : '');
-    const marker  = graphDirected ? ' marker-end="url(#garrow)"' : '';
-    svg += `<line class="${edgeCls}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"${marker}/>`;
+    // Determine edge class based on current algorithm state
+    let edgeCls  = 'edge-line';
+    let markerSuffix = '';
+    if (ei === rejectEdgeIdx) {
+      edgeCls += ' graph-edge-reject';
+    } else if (ei === considerEdgeIdx) {
+      edgeCls += ' graph-edge-consider';
+      markerSuffix = '-consider';
+    } else if (ei === relaxEdgeIdx) {
+      edgeCls += ' graph-edge-relax';
+      markerSuffix = '-relax';
+    } else if (mstEdges.has(ei)) {
+      edgeCls += ' graph-edge-mst';
+      markerSuffix = '-mst';
+    } else if (visitedSet.has(from) && visitedSet.has(to)) {
+      edgeCls += ' graph-edge-visited';
+    }
+
+    const markerAttr = graphDirected ? ` marker-end="url(#garrow${markerSuffix})"` : '';
+    svg += `<line class="${edgeCls}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"${markerAttr}/>`;
+
+    // Edge weight label — midpoint, slightly offset perpendicular
+    const mx = (x1 + x2) / 2 - uy * 10;
+    const my = (y1 + y2) / 2 + ux * 10;
+    if (weight !== undefined) {
+      svg += `<text class="graph-weight-label" x="${mx.toFixed(1)}" y="${my.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${weight}</text>`;
+    }
   }
 
   // Nodes
@@ -3997,7 +4188,11 @@ function _renderGraphSVG(c, hlSet, visitedSet) {
     if (!p) continue;
     const isCurrent = hlSet.has(node.id);
     const isVisited = visitedSet.has(node.id);
-    const cls = 'node-circle' + (isCurrent ? ' highlight' : isVisited ? ' visited' : '');
+    const isMSTNode = mstNodes.has(node.id);
+    let cls = 'node-circle';
+    if (isCurrent)      cls += ' highlight';
+    else if (isMSTNode) cls += ' mst-node';
+    else if (isVisited) cls += ' visited';
     svg += `<circle class="${cls}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}"/>`;
     svg += `<text class="node-text" x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}">${node.id}</text>`;
   }
@@ -4060,6 +4255,67 @@ function _renderGraphAdjMatrix(c, hlSet, visitedSet) {
   c.innerHTML = h;
 }
 
+function _renderGraphMSTView(c, ex) {
+  // Shows edges sorted by weight (Kruskal view) or current cut info (generic)
+  const edgeOrder = ex.edgeOrder || graphEdges.map((_, i) => i);
+  const mstEdges  = ex.mstEdges  || new Set();
+  const cIdx      = ex.considerEdgeIdx !== undefined ? ex.considerEdgeIdx : null;
+  const rIdx      = ex.rejectEdgeIdx   !== undefined ? ex.rejectEdgeIdx   : null;
+  const algo      = ex.mstAlgo || 'kruskal';
+
+  let h = `<div class="graph-mst-view">`;
+  h += `<div class="impl-section-label">${algo === 'prim' ? "Prim\u2019s" : "Kruskal\u2019s"} \u2014 edges by weight</div>`;
+
+  for (const idx of edgeOrder) {
+    const e = graphEdges[idx];
+    if (!e) continue;
+    let cls = 'graph-mst-row';
+    if (idx === rIdx)          cls += ' mst-rejected';
+    else if (idx === cIdx)     cls += ' mst-consider';
+    else if (mstEdges.has(idx)) cls += ' mst-accepted';
+    const arrow = '\u00a0\u2014\u00a0';
+    h += `<div class="${cls}">` +
+         `<span class="graph-adj-node">${e.from}</span>${arrow}<span class="graph-adj-node">${e.to}</span>` +
+         `<span class="graph-mst-weight">wt\u00a0${e.weight || 1}</span></div>`;
+  }
+
+  const mstW = [...mstEdges].reduce((s, i) => s + (graphEdges[i]?.weight || 1), 0);
+  if (mstEdges.size > 0) {
+    h += `<div class="impl-info-row" style="margin-top:0.4rem"><span class="impl-stat">MST\u00a0weight\u00a0=\u00a0${mstW}</span></div>`;
+  }
+  h += `</div>`;
+  c.innerHTML = h;
+}
+
+function _renderGraphDijkstraView(c, hlSet, visitedSet, ex) {
+  const dist   = ex.dijkstraDist || new Map();
+  const prev   = ex.dijkstraPrev || new Map();
+  const relaxIdx = ex.relaxEdgeIdx !== undefined ? ex.relaxEdgeIdx : null;
+  // Find which node is being relaxed to (destination of relax edge)
+  let relaxTo = null;
+  if (relaxIdx !== null && graphEdges[relaxIdx]) relaxTo = graphEdges[relaxIdx].to;
+
+  let h = `<div class="graph-dist-view">`;
+  h += `<div class="impl-section-label">Dijkstra \u2014 distance table</div>`;
+  h += `<table class="graph-dist-table"><thead><tr><th>node</th><th>dist</th><th>via</th></tr></thead><tbody>`;
+  for (const nd of graphNodes) {
+    const d  = dist.get(nd.id);
+    const p  = prev.get(nd.id);
+    const isCurr  = hlSet.has(nd.id);
+    const isVisit = visitedSet.has(nd.id);
+    const isRelax = nd.id === relaxTo;
+    let rowCls = '';
+    if (isCurr)       rowCls = 'dist-current';
+    else if (isRelax) rowCls = 'dist-relax';
+    else if (isVisit) rowCls = 'dist-visited';
+    const dStr = d === undefined || d === Infinity ? '\u221e' : d;
+    const pStr = p !== null && p !== undefined ? p : '\u2014';
+    h += `<tr class="${rowCls}"><td>${nd.id}</td><td>${dStr}</td><td>${pStr}</td></tr>`;
+  }
+  h += `</tbody></table></div>`;
+  c.innerHTML = h;
+}
+
 // ═══════════════════════════════════════════════
 //  GRAPH — ANIMATION HELPERS
 // ═══════════════════════════════════════════════
@@ -4087,19 +4343,21 @@ function graphAddNode() {
 
 function graphAddEdge() {
   if (graphAnimating) return;
-  const from = parseInt($('graphFromInput').value, 10);
-  const to   = parseInt($('graphToInput').value, 10);
-  $('graphFromInput').value = ''; $('graphToInput').value = '';
+  const from   = parseInt($('graphFromInput').value, 10);
+  const to     = parseInt($('graphToInput').value, 10);
+  const wRaw   = parseInt($('graphWeightInput').value, 10);
+  const weight = isNaN(wRaw) || wRaw < 1 ? 1 : wRaw;
+  $('graphFromInput').value = ''; $('graphToInput').value = ''; $('graphWeightInput').value = '';
   if (isNaN(from) || isNaN(to)) { log('graphLog', 'add-edge', 'enter valid From and To node IDs'); return; }
   if (!graphNodes.find(n => n.id === from)) { log('graphLog', 'add-edge', `node <span class="val">${from}</span> does not exist`); return; }
   if (!graphNodes.find(n => n.id === to))   { log('graphLog', 'add-edge', `node <span class="val">${to}</span> does not exist`); return; }
   if (graphEdges.find(e => e.from === from && e.to === to)) {
     log('graphLog', 'add-edge', `edge <span class="val">${from}\u00a0\u2192\u00a0${to}</span> already exists`); return;
   }
-  graphEdges.push({ from, to });
+  graphEdges.push({ from, to, weight });
   renderGraph();
   const arrow = graphDirected ? '\u00a0\u2192\u00a0' : '\u00a0\u2014\u00a0';
-  log('graphLog', 'add-edge', `edge <span class="val">${from}${arrow}${to}</span> added`);
+  log('graphLog', 'add-edge', `edge <span class="val">${from}${arrow}${to}</span> (wt\u00a0${weight}) added`);
 }
 
 async function graphBFS() {
@@ -4163,6 +4421,113 @@ async function graphTopoSort() {
   graphAnimating = false;
 }
 
+async function _animateGraphMST(steps, algo) {
+  for (const step of steps) {
+    const ex = {
+      mstEdges: step.mstEdges,
+      mstNodes: step.mstNodes || new Set(),
+      mstAlgo: algo,
+      edgeOrder: step.edgeOrder || []
+    };
+    // 'consider' → orange dashed  |  'accept' → green (via mstEdges)  |  'reject' → red briefly
+    if (step.phase === 'consider') {
+      ex.considerEdgeIdx = step.edgeIdx;
+    } else if (step.phase === 'reject') {
+      ex.rejectEdgeIdx = step.edgeIdx;
+    }
+    // 'accept' phase: edge already in step.mstEdges — no extra state needed
+    renderGraph(new Set(), new Set(), ex);
+    await sleep(step.phase === 'consider' ? 460 : 300);
+  }
+}
+
+async function _animateGraphDijkstra(steps) {
+  for (const step of steps) {
+    const ex = {
+      dijkstraDist: step.distances,
+      dijkstraPrev: step.prev,
+      relaxEdgeIdx: step.relaxEdgeIdx
+    };
+    renderGraph(new Set([step.current]), step.visited, ex);
+    await sleep(step.relaxEdgeIdx !== null ? 380 : 480);
+  }
+}
+
+async function graphKruskal() {
+  if (graphAnimating) return;
+  if (graphNodes.length === 0) { log('graphLog', 'kruskal', 'graph is empty'); return; }
+  if (graphEdges.length === 0) { log('graphLog', 'kruskal', 'no edges to build MST from'); return; }
+  graphAnimating = true;
+
+  const { steps, mstWeight, edgeOrder } = _graphKruskalSteps();
+  await _animateGraphMST(steps.map(s => ({ ...s, edgeOrder: edgeOrder.map(e => e.idx) })), 'kruskal');
+
+  // Final: show MST edges only
+  const finalMST = steps.length ? steps[steps.length - 1].mstEdges : new Set();
+  renderGraph(new Set(), new Set(), { mstEdges: finalMST, mstAlgo: 'kruskal', edgeOrder: edgeOrder.map(e => e.idx) });
+  await sleep(400);
+  renderGraph();
+
+  const mstSize = finalMST.size;
+  if (mstSize < graphNodes.length - 1) {
+    log('graphLog', 'kruskal', `MST incomplete \u2014 graph may be disconnected (${mstSize} of ${graphNodes.length - 1} edges)`);
+  } else {
+    log('graphLog', 'kruskal', `MST found \u2014 ${mstSize} edges, total weight\u00a0${mstWeight}`);
+  }
+  graphAnimating = false;
+}
+
+async function graphPrim() {
+  if (graphAnimating) return;
+  if (graphNodes.length === 0) { log('graphLog', 'prim', 'graph is empty'); return; }
+  if (graphEdges.length === 0) { log('graphLog', 'prim', 'no edges to build MST from'); return; }
+  const src = graphNodes[0].id; // start from first node
+  graphAnimating = true;
+
+  const { steps, mstWeight } = _graphPrimSteps(src);
+
+  // Build edge order for impl view (sort by weight for display)
+  const edgeOrder = graphEdges.map((_, i) => i).sort((a, b) => (graphEdges[a].weight||1) - (graphEdges[b].weight||1));
+  await _animateGraphMST(steps.map(s => ({ ...s, edgeOrder })), 'prim');
+
+  const finalMST   = steps.length ? steps[steps.length - 1].mstEdges  : new Set();
+  const finalNodes = steps.length ? steps[steps.length - 1].mstNodes  : new Set([src]);
+  renderGraph(new Set(), new Set(), { mstEdges: finalMST, mstNodes: finalNodes, mstAlgo: 'prim', edgeOrder });
+  await sleep(400);
+  renderGraph();
+
+  const mstSize = finalMST.size;
+  if (mstSize < graphNodes.length - 1) {
+    log('graphLog', 'prim', `MST incomplete \u2014 graph may be disconnected (${mstSize} of ${graphNodes.length - 1} edges)`);
+  } else {
+    log('graphLog', 'prim', `MST found (from node\u00a0${src}) \u2014 ${mstSize} edges, total weight\u00a0${mstWeight}`);
+  }
+  graphAnimating = false;
+}
+
+async function graphDijkstra() {
+  if (graphAnimating) return;
+  const src = parseInt($('graphSrcInput').value, 10);
+  if (isNaN(src) || !graphNodes.find(n => n.id === src)) {
+    log('graphLog', 'dijkstra', 'enter a valid source node ID'); return;
+  }
+  graphAnimating = true;
+
+  const { steps, dist, prev } = _graphDijkstraSteps(src);
+  await _animateGraphDijkstra(steps);
+
+  // Final settled state
+  const allVisited = new Set(graphNodes.map(n => n.id).filter(id => dist.get(id) !== Infinity));
+  renderGraph(new Set(), allVisited, { dijkstraDist: dist, dijkstraPrev: prev });
+  await sleep(400);
+  renderGraph();
+
+  const reachable = [...dist.entries()].filter(([, d]) => d !== Infinity);
+  const summary   = reachable.map(([id, d]) => `${id}:${d}`).join(', ');
+  log('graphLog', 'dijkstra', `from <span class="val">${src}</span>\u00a0\u2014\u00a0distances\u00a0{${summary}}`);
+  graphAnimating = false;
+}
+
 function graphClear() {
   if (graphAnimating) return;
   graphNodes = []; graphEdges = []; graphNextId = 1;
@@ -4172,6 +4537,48 @@ function graphClear() {
 
 // ─── Init Graph ───
 setGraphImpl('adjacency-list');
+
+// ═══════════════════════════════════════════════
+//  GRAPH ALGO PANEL — WRAPPERS
+//  Thin shims that read from the algo-section
+//  inputs and delegate to the shared graph fns.
+// ═══════════════════════════════════════════════
+function algoGraphAddEdge() {
+  // Temporarily swap input IDs so graphAddEdge reads from the algo panel
+  const fEl = $('graphFromInput'),   fBak = fEl.value;
+  const tEl = $('graphToInput'),     tBak = tEl.value;
+  const wEl = $('graphWeightInput'), wBak = wEl.value;
+  fEl.value = $('algoGFromInput').value;
+  tEl.value = $('algoGToInput').value;
+  wEl.value = $('algoGWeightInput').value;
+  graphAddEdge();
+  // Restore (graphAddEdge clears the inputs it owns; clear the algo ones too)
+  $('algoGFromInput').value = '';
+  $('algoGToInput').value   = '';
+  $('algoGWeightInput').value = '';
+}
+
+function graphBFS_algo() {
+  const src = $('algoGSrcInput').value;
+  $('graphSrcInput').value = src;
+  graphBFS().then(() => { $('algoGSrcInput').value = ''; });
+}
+
+function graphDFS_algo() {
+  const src = $('algoGSrcInput').value;
+  $('graphSrcInput').value = src;
+  graphDFS().then(() => { $('algoGSrcInput').value = ''; });
+}
+
+function graphTopoSort_algo() { graphTopoSort(); }
+function graphKruskal_algo()  { graphKruskal(); }
+function graphPrim_algo()     { graphPrim(); }
+
+function graphDijkstra_algo() {
+  const src = $('algoGSrcInput').value;
+  $('graphSrcInput').value = src;
+  graphDijkstra().then(() => { $('algoGSrcInput').value = ''; });
+}
 
 // ═══════════════════════════════════════════════
 //  ALGORITHMS — NAVIGATION
@@ -4186,6 +4593,7 @@ document.getElementById('algoNavStrip').addEventListener('click', e => {
   document.querySelectorAll('#section-algorithms .panel').forEach(p => p.classList.remove('active'));
   document.getElementById('algo-panel-' + key).classList.add('active');
   _updateAlgoSidebar(key);
+  if (key === 'graph-algos') renderGraph(); // sync algo canvas on first visit
 });
 
 // ═══════════════════════════════════════════════
@@ -4212,6 +4620,11 @@ const _algoSidebarInfo = {
     desc: 'Four ways to visit every node in a BST. The visit order depends on the traversal type used.',
     rows: [['all traversals','O(n)'],['recursive space','O(h)'],['level-order space','O(w)']],
     note: 'In-order on a BST always yields a sorted sequence. h = tree height, w = max width of any level.'
+  },
+  'graph-algos': {
+    desc: 'Graph algorithms operate on G\u00a0=\u00a0(V,\u00a0E). BFS and DFS explore reachability; topological sort orders a DAG; Kruskal\u2019s and Prim\u2019s build a minimum spanning tree on undirected weighted graphs; Dijkstra\u2019s finds shortest paths from a source.',
+    rows: [['BFS / DFS','O(V\u00a0+\u00a0E)'],['Topo sort','O(V\u00a0+\u00a0E)'],['Dijkstra (list)','O((V\u00a0+\u00a0E)\u00a0log\u00a0V)'],['Kruskal','O(E\u00a0log\u00a0E)'],['Prim (list)','O((V\u00a0+\u00a0E)\u00a0log\u00a0V)']],
+    note: 'Build a graph with \u201cAdd Node\u201d and \u201cAdd Edge\u201d, then run any algorithm. Edge weights are used by Kruskal\u2019s, Prim\u2019s, and Dijkstra\u2019s; BFS/DFS/Topo ignore them.'
   }
 };
 
@@ -5003,14 +5416,14 @@ function graphRandom() {
   for (let i = 0; i < n; i++) graphNodes.push({ id: graphNextId++ });
   const ids = graphNodes.map(nd => nd.id);
   // First ensure the graph is connected (spanning chain)
-  for (let i = 1; i < ids.length; i++) graphEdges.push({ from: ids[i-1], to: ids[i] });
+  for (let i = 1; i < ids.length; i++) graphEdges.push({ from: ids[i-1], to: ids[i], weight: _rndInt(1, 15) });
   // Add a few extra random edges
   const extras = _rndInt(1, Math.min(3, n));
   for (let e = 0; e < extras; e++) {
     const from = ids[_rndInt(0, ids.length-1)];
     const to   = ids[_rndInt(0, ids.length-1)];
     if (from !== to && !graphEdges.find(ed => ed.from === from && ed.to === to)) {
-      graphEdges.push({ from, to });
+      graphEdges.push({ from, to, weight: _rndInt(1, 15) });
     }
   }
   log('graphLog', 'random', `${n} nodes, ${graphEdges.length} edges`);

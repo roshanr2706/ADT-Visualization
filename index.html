@@ -582,13 +582,17 @@
 
       <div class="controls-bar">
         <button class="ctrl-btn" onclick="graphAddNode()">Add Node</button>
-        <input class="ctrl-input" id="graphFromInput" type="number" placeholder="From" style="width:82px">
-        <input class="ctrl-input" id="graphToInput"   type="number" placeholder="To"   style="width:82px">
+        <input class="ctrl-input" id="graphFromInput"   type="number" placeholder="From" style="width:72px">
+        <input class="ctrl-input" id="graphToInput"     type="number" placeholder="To"   style="width:72px">
+        <input class="ctrl-input" id="graphWeightInput" type="number" placeholder="Wt"   style="width:58px" min="1">
         <button class="ctrl-btn outline" onclick="graphAddEdge()">Add Edge</button>
-        <input class="ctrl-input" id="graphSrcInput" type="number" placeholder="Source" style="width:96px">
+        <input class="ctrl-input" id="graphSrcInput" type="number" placeholder="Source" style="width:88px">
         <button class="ctrl-btn outline" onclick="graphBFS()">BFS</button>
         <button class="ctrl-btn outline" onclick="graphDFS()">DFS</button>
         <button class="ctrl-btn outline" onclick="graphTopoSort()">Topo Sort</button>
+        <button class="ctrl-btn outline" onclick="graphKruskal()">Kruskal</button>
+        <button class="ctrl-btn outline" onclick="graphPrim()">Prim</button>
+        <button class="ctrl-btn outline" onclick="graphDijkstra()">Dijkstra</button>
         <button class="ctrl-btn outline" onclick="graphRandom()">Random</button>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn danger" onclick="graphClear()">Clear</button>
@@ -627,6 +631,8 @@
     <button class="nav-btn" data-algo="merge-sort">Merge Sort</button>
     <div class="nav-algo-sep"></div>
     <button class="nav-btn" data-algo="tree-traversals">Tree Traversals</button>
+    <div class="nav-algo-sep"></div>
+    <button class="nav-btn" data-algo="graph-algos">Graph Algorithms</button>
   </nav>
 
   <div class="page-body">
@@ -768,6 +774,60 @@
           </div>
         </div>
         <div class="op-log" id="algoTreeLog"></div>
+      </div>
+
+      <!-- ═══ GRAPH ALGORITHMS ═══ -->
+      <div class="panel" id="algo-panel-graph-algos">
+        <div class="section-header">
+          <h2>Graph Algorithms</h2>
+          <span class="issue-num">BFS · DFS · Topo Sort · Kruskal · Prim · Dijkstra</span>
+        </div>
+
+        <div class="impl-selector">
+          <span class="impl-selector-label">Implementation:</span>
+          <button class="impl-btn active" data-graph-impl="adjacency-list"   onclick="setGraphImpl('adjacency-list')">Adjacency List</button>
+          <button class="impl-btn"        data-graph-impl="adjacency-matrix" onclick="setGraphImpl('adjacency-matrix')">Adjacency Matrix</button>
+          <span class="impl-selector-label" style="margin-left:1.2rem">Type:</span>
+          <button class="impl-btn active" data-graph-dir="directed"   onclick="setGraphDirected(true)">Directed</button>
+          <button class="impl-btn"        data-graph-dir="undirected" onclick="setGraphDirected(false)">Undirected</button>
+        </div>
+
+        <div class="impl-note" id="algoGImplNote"></div>
+
+        <div class="controls-bar">
+          <button class="ctrl-btn" onclick="graphAddNode()">Add Node</button>
+          <input class="ctrl-input" id="algoGFromInput"   type="number" placeholder="From" style="width:72px">
+          <input class="ctrl-input" id="algoGToInput"     type="number" placeholder="To"   style="width:72px">
+          <input class="ctrl-input" id="algoGWeightInput" type="number" placeholder="Wt"   style="width:58px" min="1">
+          <button class="ctrl-btn outline" onclick="algoGraphAddEdge()">Add Edge</button>
+          <input class="ctrl-input" id="algoGSrcInput" type="number" placeholder="Source" style="width:88px">
+          <button class="ctrl-btn outline" onclick="graphBFS_algo()">BFS</button>
+          <button class="ctrl-btn outline" onclick="graphDFS_algo()">DFS</button>
+          <button class="ctrl-btn outline" onclick="graphTopoSort_algo()">Topo Sort</button>
+          <button class="ctrl-btn outline" onclick="graphKruskal_algo()">Kruskal</button>
+          <button class="ctrl-btn outline" onclick="graphPrim_algo()">Prim</button>
+          <button class="ctrl-btn outline" onclick="graphDijkstra_algo()">Dijkstra</button>
+          <button class="ctrl-btn outline" onclick="graphRandom()">Random</button>
+          <span class="ctrl-spacer"></span>
+          <button class="ctrl-btn danger" onclick="graphClear()">Clear</button>
+        </div>
+
+        <div class="viz-dual">
+          <div class="viz-pane">
+            <div class="viz-pane-label">Graph</div>
+            <div class="viz-canvas" id="algoGCanvas">
+              <div class="empty-state"><span class="ornament">§</span>Add a node to begin</div>
+            </div>
+          </div>
+          <div class="viz-pane">
+            <div class="viz-pane-label">Internal Representation</div>
+            <div class="viz-canvas" id="algoGImplCanvas">
+              <div class="empty-state"><span class="ornament">§</span>Add a node to begin</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="op-log" id="algoGLog"></div>
       </div>
 
     </main>

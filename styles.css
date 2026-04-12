@@ -1581,6 +1581,127 @@
   background: var(--canvas-bg);
 }
 
+/* ─── Graph — MST & Dijkstra edge states ─── */
+.edge-line.graph-edge-mst {
+  stroke: var(--success);
+  stroke-width: 2.8;
+}
+
+.edge-line.graph-edge-consider {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 3;
+}
+
+.edge-line.graph-edge-reject {
+  stroke: #c44444;
+  stroke-width: 2;
+  opacity: 0.45;
+}
+
+.edge-line.graph-edge-relax {
+  stroke: #7b4fa0;
+  stroke-width: 2.5;
+}
+
+/* Edge weight labels */
+.graph-weight-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  fill: var(--muted);
+  pointer-events: none;
+}
+
+/* MST node state */
+.node-circle.mst-node {
+  fill: #e8f5ee;
+  stroke: var(--success);
+}
+
+/* ─── Graph — MST edge-list impl view ─── */
+.graph-mst-view {
+  padding: 0.5rem 0.75rem;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.graph-mst-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.76rem;
+  padding: 0.16rem 0.3rem;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.graph-mst-row.mst-accepted {
+  background: #e8f5ee;
+  border-color: var(--success);
+}
+
+.graph-mst-row.mst-consider {
+  background: var(--highlight);
+  border-color: var(--accent);
+}
+
+.graph-mst-row.mst-rejected {
+  background: #fce8e8;
+  border-color: #c44444;
+  opacity: 0.55;
+}
+
+.graph-mst-weight {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+/* ─── Graph — Dijkstra distance table impl view ─── */
+.graph-dist-view {
+  padding: 0.5rem 0.75rem;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.graph-dist-table {
+  border-collapse: collapse;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.76rem;
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.graph-dist-table th,
+.graph-dist-table td {
+  padding: 0.22rem 0.45rem;
+  border: 1px solid var(--rule);
+  text-align: center;
+}
+
+.graph-dist-table th {
+  background: var(--paper-warm);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.graph-dist-table tr.dist-current td {
+  background: var(--highlight);
+  border-color: var(--accent);
+}
+
+.graph-dist-table tr.dist-visited td {
+  background: #e8f5ee;
+}
+
+.graph-dist-table tr.dist-relax td {
+  background: #f0eaf7;
+  border-color: #7b4fa0;
+}
+
 /* ─── Algorithms — Nav ─── */
 .nav-algo-group {
   display: flex;
