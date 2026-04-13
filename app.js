@@ -56,34 +56,41 @@ const implMeta = {
 // ═══════════════════════════════════════════════
 //  SIDEBAR
 // ═══════════════════════════════════════════════
-const sidebarData = {
-  stack: {
-    description: 'A stack is a linear collection where elements are added and removed from the same end — the <em>top</em>. Think of a stack of plates: the last placed is the first taken.',
-  },
-};
+const sidebarData = {};
+const _sidebarPanels = {};
 
 function updateSidebar(panel) {
   const data = sidebarData[panel];
-  if (!data) return;
-  const meta = implMeta[implType];
+  const cfg  = _sidebarPanels[panel];
+  if (!data || !cfg) return;
+  const meta = cfg.getMeta();
   let html = `<div class="sidebar-section"><h3>About</h3><p>${data.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
+  html += `<div class="sidebar-section"><h3>${cfg.complexityHeader || 'Time Complexity'}</h3>`;
   html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
   html += `<table class="complexity-table">`;
   meta.complexity.forEach(([op, c]) => {
-    const isWarn = c === 'O(n)' && op !== 'search';
+    const isWarn = cfg.warnFn ? cfg.warnFn(op, c) : false;
     html += `<tr><td>${op}</td><td${isWarn ? ' class="complexity-warn"' : ''}>${c}</td></tr>`;
   });
   html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Memory Layout</h3><p>${
+  if (cfg.extraSection) html += cfg.extraSection();
+  $('sidebarContent').innerHTML = html;
+}
+
+sidebarData.stack = {
+  description: 'A stack is a linear collection where elements are added and removed from the same end — the <em>top</em>. Think of a stack of plates: the last placed is the first taken.',
+};
+_sidebarPanels.stack = {
+  getMeta: () => implMeta[implType],
+  warnFn: (op, c) => c === 'O(n)' && op !== 'search',
+  extraSection: () => `<div class="sidebar-section"><h3>Memory Layout</h3><p>${
     implType === 'array'
       ? 'Contiguous block — O(1) random access, cache-friendly.'
       : implType === 'dll'
       ? 'Each node allocated separately, holding data + two pointers (next, prev).'
       : 'Each node allocated separately, holding data + one pointer (next).'
-  }</p></div>`;
-  $('sidebarContent').innerHTML = html;
-}
+  }</p></div>`
+};
 
 // ═══════════════════════════════════════════════
 //  NAVIGATION
@@ -456,27 +463,14 @@ sidebarData.linkedlist = {
   description: 'A linked list stores elements in nodes, each holding a value and one or two pointers to neighbouring nodes. Unlike arrays, nodes are scattered in memory — no contiguous block, no O(1) random access.'
 };
 
-// ─── Extend updateSidebar ───
-const _origUpdateSidebar = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'linkedlist') { _origUpdateSidebar(panel); return; }
-  const data = sidebarData.linkedlist;
-  const meta = llImplMeta[llImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${data.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => {
-    const warn = c === 'O(n)' && op !== 'search' && op !== 'insertAt';
-    html += `<tr><td>${op}</td><td${warn ? ' class="complexity-warn"' : ''}>${c}</td></tr>`;
-  });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Memory Layout</h3><p>${
+_sidebarPanels.linkedlist = {
+  getMeta: () => llImplMeta[llImpl],
+  warnFn: (op, c) => c === 'O(n)' && op !== 'search' && op !== 'insertAt',
+  extraSection: () => `<div class="sidebar-section"><h3>Memory Layout</h3><p>${
     llImpl === 'dll'
       ? 'Each node holds <em>data</em> + two pointers (next, prev). More memory per node but enables O(1) removal from both ends.'
       : 'Each node holds <em>data</em> + one pointer (next). Smaller nodes but deletion from the tail requires traversal.'
-  }</p></div>`;
-  $('sidebarContent').innerHTML = html;
+  }</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -858,34 +852,23 @@ sidebarData.queue = {
   description: 'A queue is a linear collection where elements are added at the rear and removed from the front — First In, First Out (FIFO). Like a line of people: the first to arrive is the first served.'
 };
 
-// ─── Extend updateSidebar ───
-const _prevUpdateSidebar = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'queue') { _prevUpdateSidebar(panel); return; }
-  const data = sidebarData.queue;
-  const meta = queueImplMeta[queueImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${data.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => {
-    const warn = c === 'O(n)' && op !== 'search';
-    html += `<tr><td>${op}</td><td${warn ? ' class="complexity-warn"' : ''}>${c}</td></tr>`;
-  });
-  html += `</table></div>`;
-  const memNote = queueImpl === 'array'
-    ? 'Contiguous block — elements shift on dequeue, cache-friendly but O(n) removal.'
-    : queueImpl === 'circular'
-    ? `Fixed-size contiguous block (${QUEUE_CAP} slots). Indices wrap around — no shifting, O(1) access.`
-    : queueImpl === 'sll'
-    ? 'Each node allocated separately with data + one next pointer. Head (front) and tail (rear) maintained for O(1) both ends.'
-    : queueImpl === 'sll-rear-head'
-    ? 'Each node with data + next pointer. Rear at head (O(1) enqueue) but dequeue must traverse to find new tail — O(n).'
-    : queueImpl === 'sll-head-only'
-    ? 'Each node with data + next pointer. Only head pointer stored — enqueue must traverse entire list — O(n).'
-    : 'Two separate stacks (arrays). Each element crosses from inbox to outbox at most once — O(1) amortized per operation.';
-  html += `<div class="sidebar-section"><h3>Memory Layout</h3><p>${memNote}</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.queue = {
+  getMeta: () => queueImplMeta[queueImpl],
+  warnFn: (op, c) => c === 'O(n)' && op !== 'search',
+  extraSection: () => {
+    const memNote = queueImpl === 'array'
+      ? 'Contiguous block — elements shift on dequeue, cache-friendly but O(n) removal.'
+      : queueImpl === 'circular'
+      ? `Fixed-size contiguous block (${QUEUE_CAP} slots). Indices wrap around — no shifting, O(1) access.`
+      : queueImpl === 'sll'
+      ? 'Each node allocated separately with data + one next pointer. Head (front) and tail (rear) maintained for O(1) both ends.'
+      : queueImpl === 'sll-rear-head'
+      ? 'Each node with data + next pointer. Rear at head (O(1) enqueue) but dequeue must traverse to find new tail — O(n).'
+      : queueImpl === 'sll-head-only'
+      ? 'Each node with data + next pointer. Only head pointer stored — enqueue must traverse entire list — O(n).'
+      : 'Two separate stacks (arrays). Each element crosses from inbox to outbox at most once — O(1) amortized per operation.';
+    return `<div class="sidebar-section"><h3>Memory Layout</h3><p>${memNote}</p></div>`;
+  }
 };
 
 // ═══════════════════════════════════════════════
@@ -1372,22 +1355,9 @@ sidebarData.heap = {
   description: 'A binary heap is a complete binary tree stored compactly in an array. For index i, its parent is at ⌊(i−1)/2⌋, left child at 2i+1, right child at 2i+2. The heap property ensures the root is always the min (or max).'
 };
 
-// ─── Extend updateSidebar ───
-const _prevUpdateSidebar2 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'heap') { _prevUpdateSidebar2(panel); return; }
-  const data = sidebarData.heap;
-  const meta = heapImplMeta[heapImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${data.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => {
-    html += `<tr><td>${op}</td><td>${c}</td></tr>`;
-  });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Structure Property</h3><p>Complete binary tree — all levels full except possibly the last, filled left-to-right. Stored as a flat array: parent(i) = ⌊(i−1)/2⌋.</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.heap = {
+  getMeta: () => heapImplMeta[heapImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Structure Property</h3><p>Complete binary tree — all levels full except possibly the last, filled left-to-right. Stored as a flat array: parent(i) = ⌊(i−1)/2⌋.</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -1676,18 +1646,9 @@ sidebarData.binarytree = {
   description: 'A binary tree is a hierarchical structure where each node has at most two children — left and right. There is no ordering constraint on values. This visualizer inserts nodes level-order (BFS), filling each level left-to-right before starting the next.'
 };
 
-const _prevUpdateSidebar3 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'binarytree') { _prevUpdateSidebar3(panel); return; }
-  const meta = btImplMeta[btImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.binarytree.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Traversals</h3><p>In-order (L→N→R), Pre-order (N→L→R), Post-order (L→R→N), Level-order (BFS). Without an ordering invariant, in-order does not produce a sorted sequence.</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.binarytree = {
+  getMeta: () => btImplMeta[btImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Traversals</h3><p>In-order (L→N→R), Pre-order (N→L→R), Post-order (L→R→N), Level-order (BFS). Without an ordering invariant, in-order does not produce a sorted sequence.</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -1918,18 +1879,10 @@ sidebarData.bst = {
   description: 'A Binary Search Tree enforces: for every node, all values in the left subtree are less, and all in the right subtree are greater. This enables O(h) search, insert, and delete where h is the tree height. In the worst case (sorted input), h = n — use an AVL tree to guarantee O(log n).'
 };
 
-const _prevUpdateSidebar4 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'bst') { _prevUpdateSidebar4(panel); return; }
-  const meta = bstImplMeta[bstImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.bst.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity (h = height)</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Worst Case</h3><p>Inserting sorted input (1,2,3,…) degenerates the BST into a linked list with h = n and O(n) ops. An AVL or Red-Black tree prevents this with rotations.</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.bst = {
+  getMeta: () => bstImplMeta[bstImpl],
+  complexityHeader: 'Time Complexity (h = height)',
+  extraSection: () => `<div class="sidebar-section"><h3>Worst Case</h3><p>Inserting sorted input (1,2,3,…) degenerates the BST into a linked list with h = n and O(n) ops. An AVL or Red-Black tree prevents this with rotations.</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -2172,18 +2125,9 @@ sidebarData.avl = {
   description: 'An AVL Tree is a self-balancing BST. Each node stores a <em>balance factor</em> bf = height(left) \u2212 height(right). After any insert or remove, if |bf| > 1 at some ancestor, one of four rotations (LL, LR, RR, RL) restores balance and keeps height O(log n).'
 };
 
-const _prevUpdateSidebar5 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'avl') { _prevUpdateSidebar5(panel); return; }
-  const meta = avlImplMeta[avlImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.avl.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Rotations</h3><p>LL: right-rotate at imbalanced node. RR: left-rotate. LR: left-rotate child, then right-rotate ancestor. RL: right-rotate child, then left-rotate ancestor. Balance factor colours: grey\u00a0=\u00a00, accent\u00a0=\u00a0\u00b11, red\u00a0=\u00a0\u00b12 (triggers rotation).</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.avl = {
+  getMeta: () => avlImplMeta[avlImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Rotations</h3><p>LL: right-rotate at imbalanced node. RR: left-rotate. LR: left-rotate child, then right-rotate ancestor. RL: right-rotate child, then left-rotate ancestor. Balance factor colours: grey\u00a0=\u00a00, accent\u00a0=\u00a0\u00b11, red\u00a0=\u00a0\u00b12 (triggers rotation).</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -2478,18 +2422,9 @@ sidebarData.btree = {
   description: 'A B-Tree of minimum degree t is a balanced multi-way search tree where all leaves are at the same depth. Each internal node holds up to 2t\u22121 keys and 2t children. With t\u00a0=\u00a02 (a 2-3-4 tree), nodes hold 1\u20133 keys. Splits keep the tree balanced without extra traversals.'
 };
 
-const _prevUpdateSidebar6 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'btree') { _prevUpdateSidebar6(panel); return; }
-  const meta = btreeImplMeta[btreeImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.btree.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Split Property</h3><p>When a node is full (2t\u22121 keys), it splits: the median key promotes to the parent, and the left/right halves become two sibling nodes. All leaves remain at the same depth.</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.btree = {
+  getMeta: () => btreeImplMeta[btreeImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Split Property</h3><p>When a node is full (2t\u22121 keys), it splits: the median key promotes to the parent, and the left/right halves become two sibling nodes. All leaves remain at the same depth.</p></div>`
 };
 
 // ═══════════════════════════════════════════════
@@ -2884,18 +2819,9 @@ sidebarData.hashtable = {
   description: 'A hash table maps keys to values using a hash function <em>h(k) = k mod N</em> to pick an array index. When two keys land on the same index (a <em>collision</em>), it is resolved with chaining (a linked list per slot) or open addressing (linear probing within the array).'
 };
 
-const _prevUpdateSidebar7 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'hashtable') { _prevUpdateSidebar7(panel); return; }
-  const meta = htImplMeta[htImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.hashtable.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Hash Function</h3><p>This demo uses <code>h(k) = k mod 8</code>. A good hash function distributes keys uniformly to minimise collisions and keep chains short (ideally O(1) length).</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.hashtable = {
+  getMeta: () => htImplMeta[htImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Hash Function</h3><p>This demo uses <code>h(k) = k mod 8</code>. A good hash function distributes keys uniformly to minimise collisions and keep chains short (ideally O(1) length).</p></div>`
 };
 
 function setHTImpl(type) {
@@ -3159,21 +3085,11 @@ sidebarData.dictionary = {
   description: 'A dictionary (map) associates unique <em>keys</em> with <em>values</em>. Backing structure determines trade-offs: hash maps give expected O(1) ops but no ordering; BST-backed dicts maintain sorted key order with O(h) ops where h is tree height.'
 };
 
-const _prevUpdateSidebar8 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'dictionary') { _prevUpdateSidebar8(panel); return; }
-  const meta = dictImplMeta[dictImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.dictionary.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  const extra = dictImpl === 'bst'
+_sidebarPanels.dictionary = {
+  getMeta: () => dictImplMeta[dictImpl],
+  extraSection: () => dictImpl === 'bst'
     ? `<div class="sidebar-section"><h3>Key Order</h3><p>In-order traversal of the BST yields all keys in sorted ascending order \u2014 a property unique to tree-backed dictionaries, unavailable in hash maps.</p></div>`
-    : `<div class="sidebar-section"><h3>Load Factor</h3><p>Performance degrades when entries\u00a0/\u00a0slots exceeds ~0.7. Real implementations resize (double the array) to keep expected chain length O(1).</p></div>`;
-  html += extra;
-  $('sidebarContent').innerHTML = html;
+    : `<div class="sidebar-section"><h3>Load Factor</h3><p>Performance degrades when entries\u00a0/\u00a0slots exceeds ~0.7. Real implementations resize (double the array) to keep expected chain length O(1).</p></div>`
 };
 
 function setDictImpl(type) {
@@ -3494,18 +3410,9 @@ sidebarData.unionfind = {
   description: 'A disjoint-set (union-find) maintains a collection of non-overlapping sets, each represented as a tree. The root is the set\u2019s representative. <em>Find</em> locates a root; <em>Union</em> merges two sets by linking their roots.'
 };
 
-const _prevUpdateSidebar9 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'unionfind') { _prevUpdateSidebar9(panel); return; }
-  const meta = ufImplMeta[ufImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.unionfind.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  html += `<div class="sidebar-section"><h3>Rank vs Height</h3><p>Rank is an upper bound on height, not necessarily equal to it. After path compression flattens a tree, rank stays unchanged \u2014 it only increases in union-by-rank when two equal-rank roots merge.</p></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.unionfind = {
+  getMeta: () => ufImplMeta[ufImpl],
+  extraSection: () => `<div class="sidebar-section"><h3>Rank vs Height</h3><p>Rank is an upper bound on height, not necessarily equal to it. After path compression flattens a tree, rank stays unchanged \u2014 it only increases in union-by-rank when two equal-rank roots merge.</p></div>`
 };
 
 function setUFImpl(type) {
@@ -3823,17 +3730,8 @@ sidebarData.graph = {
   description: 'A graph G\u00a0=\u00a0(V,\u00a0E) pairs a set of vertices V with edges E. Directed graphs (digraphs) have one-way edges; undirected graphs are bidirectional. Graphs model dependency chains, road networks, social connections, and more.'
 };
 
-const _prevUpdateSidebar10 = updateSidebar;
-updateSidebar = function(panel) {
-  if (panel !== 'graph') { _prevUpdateSidebar10(panel); return; }
-  const meta = graphImplMeta[graphImpl];
-  let html = `<div class="sidebar-section"><h3>About</h3><p>${sidebarData.graph.description}</p></div>`;
-  html += `<div class="sidebar-section"><h3>Time Complexity</h3>`;
-  html += `<div class="sidebar-impl-badge">${meta.label}</div>`;
-  html += `<table class="complexity-table">`;
-  meta.complexity.forEach(([op, c]) => { html += `<tr><td>${op}</td><td>${c}</td></tr>`; });
-  html += `</table></div>`;
-  $('sidebarContent').innerHTML = html;
+_sidebarPanels.graph = {
+  getMeta: () => graphImplMeta[graphImpl]
 };
 
 // ═══════════════════════════════════════════════
@@ -4545,9 +4443,9 @@ setGraphImpl('adjacency-list');
 // ═══════════════════════════════════════════════
 function algoGraphAddEdge() {
   // Temporarily swap input IDs so graphAddEdge reads from the algo panel
-  const fEl = $('graphFromInput'),   fBak = fEl.value;
-  const tEl = $('graphToInput'),     tBak = tEl.value;
-  const wEl = $('graphWeightInput'), wBak = wEl.value;
+  const fEl = $('graphFromInput');
+  const tEl = $('graphToInput');
+  const wEl = $('graphWeightInput');
   fEl.value = $('algoGFromInput').value;
   tEl.value = $('algoGToInput').value;
   wEl.value = $('algoGWeightInput').value;
@@ -5193,7 +5091,7 @@ function togglePseudoLang(key) {
 })();
 
 // ═══════════════════════════════════════════════
-//  RANDOM GENERATE — UTILITIES
+//  RANDOM GENERATE
 // ═══════════════════════════════════════════════
 function _rndInt(lo, hi) { return Math.floor(Math.random() * (hi - lo + 1)) + lo; }
 function _rndArr(n, lo, hi) {
@@ -5205,9 +5103,6 @@ function _rndArr(n, lo, hi) {
   return arr;
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — STACK
-// ═══════════════════════════════════════════════
 function stackRandom() {
   if (isAnimating) return;
   stackData = _rndArr(_rndInt(4, 7), 1, 99);
@@ -5215,9 +5110,6 @@ function stackRandom() {
   renderStack();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — LINKED LIST
-// ═══════════════════════════════════════════════
 function llRandom() {
   if (llAnimating) return;
   llData = _rndArr(_rndInt(4, 7), 1, 99);
@@ -5225,9 +5117,6 @@ function llRandom() {
   renderLinkedList(true);
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — QUEUE
-// ═══════════════════════════════════════════════
 function queueRandom() {
   if (queueAnimating) return;
   const vals = _rndArr(_rndInt(4, 6), 1, 99);
@@ -5249,9 +5138,6 @@ function queueRandom() {
   renderQueue();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — HEAP
-// ═══════════════════════════════════════════════
 function heapRandom() {
   if (heapAnimating) return;
   heapData = _rndArr(_rndInt(5, 8), 1, 99);
@@ -5270,9 +5156,6 @@ function heapRandom() {
   renderHeap();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — BINARY TREE
-// ═══════════════════════════════════════════════
 function btRandom() {
   if (btAnimating) return;
   btRoot = null; btNextId = 1;
@@ -5286,9 +5169,6 @@ function btRandom() {
   renderBT();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — BST
-// ═══════════════════════════════════════════════
 function bstRandom() {
   if (bstAnimating) return;
   bstRoot = null; bstNextId = 1;
@@ -5304,9 +5184,6 @@ function bstRandom() {
   renderBST();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — AVL TREE
-// ═══════════════════════════════════════════════
 function avlRandom() {
   if (avlAnimating) return;
   avlRoot = null; avlNextId = 1;
@@ -5316,9 +5193,6 @@ function avlRandom() {
   renderAVL();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — B-TREE
-// ═══════════════════════════════════════════════
 function btreeRandom() {
   if (btreeAnimating) return;
   btreeRoot = null;
@@ -5328,9 +5202,6 @@ function btreeRandom() {
   renderBTree();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — HASH TABLE
-// ═══════════════════════════════════════════════
 function htRandom() {
   htChains = Array.from({length: HT_SIZE}, () => []);
   htSlots  = Array(HT_SIZE).fill(null);
@@ -5351,9 +5222,6 @@ function htRandom() {
   renderHT();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — DICTIONARY
-// ═══════════════════════════════════════════════
 function dictRandom() {
   dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
   dictBSTRoot = null; dictBSTNextId = 1;
@@ -5377,9 +5245,6 @@ function dictRandom() {
   renderDict();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — UNION-FIND
-// ═══════════════════════════════════════════════
 function ufRandom() {
   if (ufAnimating) return;
   ufParent = Array(UF_MAX).fill(-1);
@@ -5406,18 +5271,14 @@ function ufRandom() {
   renderUF();
 }
 
-// ═══════════════════════════════════════════════
-//  RANDOM GENERATE — GRAPH
-// ═══════════════════════════════════════════════
 function graphRandom() {
   if (graphAnimating) return;
   graphNodes = []; graphEdges = []; graphNextId = 1;
   const n = _rndInt(4, 7);
   for (let i = 0; i < n; i++) graphNodes.push({ id: graphNextId++ });
   const ids = graphNodes.map(nd => nd.id);
-  // First ensure the graph is connected (spanning chain)
+  // Ensure connected via spanning chain, then add a few extra edges
   for (let i = 1; i < ids.length; i++) graphEdges.push({ from: ids[i-1], to: ids[i], weight: _rndInt(1, 15) });
-  // Add a few extra random edges
   const extras = _rndInt(1, Math.min(3, n));
   for (let e = 0; e < extras; e++) {
     const from = ids[_rndInt(0, ids.length-1)];

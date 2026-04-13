@@ -54,19 +54,6 @@
     margin-top: 1rem;
   }
 
-  .edition-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.6rem 2rem;
-    border-bottom: 1px solid var(--rule);
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
   /* ─── Section Tabs ─── */
   .section-tabs {
     display: flex;
@@ -446,7 +433,6 @@
     100% { opacity: 1; transform: translateY(0); }
   }
 
-  .animate-in { animation: fadeSlideIn 0.4s ease forwards; }
   .animate-pulse { animation: pulse 0.5s ease; }
   .animate-drop { animation: dropIn 0.45s ease forwards; }
 
@@ -463,91 +449,9 @@
     margin-top: 2rem;
   }
 
-  .page-footer .finis {
-    font-family: 'Instrument Serif', serif;
-    font-size: 1.5rem;
-    color: var(--rule);
-    display: block;
-    margin-bottom: 0.5rem;
-  }
-
   /* ─── Smooth transitions for panel switching ─── */
   .panel { display: none; }
   .panel.active { display: flex; flex-direction: column; gap: 1.5rem; animation: fadeSlideIn 0.35s ease; }
-
-  /* ─── Array-based viz (stack, queue, hashmap) ─── */
-  .array-viz {
-    display: flex;
-    gap: 0;
-    align-items: flex-end;
-    min-height: 200px;
-    padding: 2rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  .array-cell {
-    width: 52px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    animation: dropIn 0.35s ease forwards;
-  }
-
-  .array-cell .cell-box {
-    width: 52px;
-    height: 52px;
-    border: 1.5px solid var(--node-stroke);
-    background: var(--node-fill);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-  }
-
-  .array-cell .cell-box.highlight {
-    background: var(--highlight);
-    border-color: var(--accent);
-  }
-
-  .array-cell .cell-idx {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.55rem;
-    color: var(--muted);
-    margin-top: 0.3rem;
-  }
-
-  .array-cell .cell-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.55rem;
-    color: var(--accent);
-    margin-bottom: 0.3rem;
-    min-height: 1em;
-  }
-
-  /* Hash map bucket chain */
-  .bucket-chain {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .bucket-chain .cell-box {
-    width: 52px;
-    height: 36px;
-    font-size: 0.75rem;
-  }
-
-  .arrow-indicator {
-    font-family: 'Instrument Serif', serif;
-    font-size: 1.2rem;
-    color: var(--accent);
-    margin: 0 0.3rem;
-    align-self: center;
-  }
 
   /* ─── Implementation Selector ─── */
   .impl-selector {
@@ -1082,29 +986,6 @@
     border-color: var(--success);
   }
 
-  /* ─── Heap bubble animations ─── */
-  @keyframes bubbleUp {
-    0%   { transform: translateY(0); }
-    40%  { transform: translateY(-10px); }
-    100% { transform: translateY(0); }
-  }
-
-  @keyframes bubbleDown {
-    0%   { transform: translateY(0); }
-    40%  { transform: translateY(10px); }
-    100% { transform: translateY(0); }
-  }
-
-  .animate-bubble-up   { animation: bubbleUp   0.4s ease; }
-  .animate-bubble-down { animation: bubbleDown 0.4s ease; }
-
-  /* ─── Slide in from right (enqueue) ─── */
-  @keyframes slideInRight {
-    from { opacity: 0; transform: translateX(24px); }
-    to   { opacity: 1; transform: translateX(0); }
-  }
-  .animate-slide-in-right { animation: slideInRight 0.35s ease forwards; }
-
 /* ─── Tree shared (Binary Tree, BST, AVL, B-Tree) ─── */
 
 /* Small metadata label below a tree node — balance factor, depth, index */
@@ -1233,31 +1114,6 @@
 }
 .tree-struct-row.row-highlight {
     background: var(--highlight);
-}
-
-/* ─── Traversal result chips ─── */
-
-.tree-traversal-result {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.6rem;
-    padding-top: 0.6rem;
-    border-top: 1px dotted var(--rule);
-    width: 100%;
-    min-height: 1.8rem;
-}
-.traversal-chip {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.62rem;
-    font-weight: 500;
-    color: var(--paper);
-    background: var(--ink);
-    padding: 0.1rem 0.45rem;
-    animation: dropIn 0.3s ease forwards;
-}
-.traversal-chip.chip-active {
-    background: var(--success);
 }
 
 /* ─── AVL balance-factor color coding ─── */
@@ -1703,19 +1559,6 @@
 }
 
 /* ─── Algorithms — Nav ─── */
-.nav-algo-group {
-  display: flex;
-  align-items: center;
-  padding: 0 0.9rem;
-  font-family: 'DM Mono', monospace;
-  font-size: 0.54rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--rule);
-  white-space: nowrap;
-  border-right: 1px solid var(--rule);
-}
-
 .nav-algo-sep {
   width: 1px;
   background: var(--rule);
