@@ -3059,14 +3059,25 @@ setHTImpl('chaining');
 //  DICTIONARY
 // ═══════════════════════════════════════════════
 
-const DICT_HT_SIZE = 8;
+const DICT_HT_INIT_SIZE = 8;
+const DICT_HT_LOAD_FACTOR = 0.75;
+let dictHtSize = DICT_HT_INIT_SIZE;
 let dictImpl = 'hashmap';
 let dictAnimating = false;
-let dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+let dictChains = Array.from({length: dictHtSize}, () => []);
 let dictBSTRoot = null;
 let dictBSTNextId = 1;
 
-function dictHash(key) { return ((key % DICT_HT_SIZE) + DICT_HT_SIZE) % DICT_HT_SIZE; }
+function dictHash(key) { return ((key % dictHtSize) + dictHtSize) % dictHtSize; }
+
+function dictHtEntryCount() { return dictChains.reduce((s, c) => s + c.length, 0); }
+
+function _dictResize() {
+  const oldChains = dictChains;
+  dictHtSize *= 2;
+  dictChains = Array.from({length: dictHtSize}, () => []);
+  for (const chain of oldChains) for (const e of chain) dictChains[dictHash(e.key)].push(e);
+}
 
 const dictImplMeta = {
   'hashmap': {
@@ -3098,7 +3109,8 @@ function setDictImpl(type) {
     b.classList.toggle('active', b.dataset.dictImpl === type);
   });
   $('dictImplNote').innerHTML = dictImplMeta[type].note;
-  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictHtSize = DICT_HT_INIT_SIZE;
+  dictChains = Array.from({length: dictHtSize}, () => []);
   dictBSTRoot = null; dictBSTNextId = 1;
   renderDict();
   if ($('panel-dictionary').classList.contains('active')) updateSidebar('dictionary');
@@ -3154,7 +3166,7 @@ function renderDict(hlSlot = -1, hlKey = null, hlCls = '', hlBSTSet = new Set(),
 
 function _renderDictChaining(ic, hlSlot, hlKey, hlCls) {
   let html = '<div class="ht-table">';
-  for (let i = 0; i < DICT_HT_SIZE; i++) {
+  for (let i = 0; i < dictHtSize; i++) {
     const chain = dictChains[i];
     const isHL = i === hlSlot;
     html += `<div class="ht-row${isHL ? ' ht-row-active' : ''}">`;
@@ -3271,6 +3283,12 @@ async function dictInsert() {
       dictChains[h].push({key, val});
       renderDict(h, key, 'ht-found'); await sleep(500);
       log('dictLog', 'insert', `inserted <span class="val">${key}</span> \u2192 <span class="val">${val}</span> at slot\u00a0${h}`);
+      if (dictHtEntryCount() / dictHtSize >= DICT_HT_LOAD_FACTOR) {
+        const oldSize = dictHtSize;
+        _dictResize();
+        log('dictLog', 'resize', `load factor \u2265 ${DICT_HT_LOAD_FACTOR} \u2014 resized ${oldSize} \u2192 ${dictHtSize} slots, rehashed all entries`);
+        renderDict(); await sleep(500);
+      }
     }
   } else {
     const {path} = _dictBSTFindPath(dictBSTRoot, key);
@@ -3363,7 +3381,8 @@ async function dictDelete() {
 
 function dictClear() {
   if (dictAnimating) return;
-  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictHtSize = DICT_HT_INIT_SIZE;
+  dictChains = Array.from({length: dictHtSize}, () => []);
   dictBSTRoot = null; dictBSTNextId = 1;
   renderDict();
   log('dictLog', 'clear', 'dictionary cleared');
@@ -5223,7 +5242,8 @@ function htRandom() {
 }
 
 function dictRandom() {
-  dictChains = Array.from({length: DICT_HT_SIZE}, () => []);
+  dictHtSize = DICT_HT_INIT_SIZE;
+  dictChains = Array.from({length: dictHtSize}, () => []);
   dictBSTRoot = null; dictBSTNextId = 1;
   const keys = _rndArr(_rndInt(4, 6), 1, 50);
   const vals = keys.map(() => _rndInt(1, 99));
